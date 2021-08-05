@@ -1,8 +1,7 @@
 import numpy as np
-import scipy.linalg as la
 
 
-def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps):
+def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen=None):
     """
     Use (num_pass - 1) passes over the matrix A to generate a matrix S where
     range(S) is (hopefully) closely aligned with the span of A's top right
@@ -12,9 +11,12 @@ def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps):
     We accomplish this roughly as follows:
 
         if num_pass is odd
-            S = (A' A)^((num_pass - 1)//2) sketch_op_gen(n, k)
+            S = (A' A)^((num_pass - 1)//2) sketch_op_gen(n, k, generator)
         if num_pass is even
-            S = (A' A)^((num_pass - 2)//2) A' sketch_op_gen(m, k)
+            S = (A' A)^((num_pass - 2)//2) A' sketch_op_gen(m, k, generator)
+
+        where "generator := np.random.default_rng(gen)" is a Generator object
+        from NumPy.random.
 
     That description is "rough" because repeated applications of A will cause
     floating point errors to rapidly accumulate. The parameter "pps" reads
@@ -24,18 +26,19 @@ def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps):
     return the factor Q from an (economic) QR factorization.
     """
     assert num_pass > 0
+    gen = np.random.default_rng(gen)
     if num_pass % 2 == 1:
-        S = sketch_op_gen(A.shape[1], k)
+        S = sketch_op_gen(A.shape[1], k, gen)
         passes_done = 0
         q = (num_pass - 1) // 2
     else:
-        S = A.T @ sketch_op_gen(A.shape[0], k)
+        S = A.T @ sketch_op_gen(A.shape[0], k, gen)
         passes_done = 1
         if pps == 1:
             S = stabilizer(S)
         q = (num_pass - 2) // 2
     # q is an even integer; need to compute
-    #   S := (A' A)^q S and
+    #   S := (A' A)^q S
     # up to intermediate stabilization.
     if q > 0:
         S = charge_sample(A, S, q, stabilizer, pps, passes_done)

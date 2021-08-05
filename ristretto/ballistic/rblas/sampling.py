@@ -2,11 +2,12 @@ import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
 
-def sampling_operator(n_rows, n_cols, indices=None):
+def sampling_operator(n_rows, n_cols, gen=None, indices=None):
+    gen = np.random.default_rng(gen)
     if indices is None:
         pop_size = max(n_rows, n_cols)
         sample_size = min(n_rows, n_cols)
-        indices = np.random.choice(pop_size, sample_size, replace=False)
+        indices = gen.choice(pop_size, sample_size, replace=False)
         indices.sort()
     else:
         assert indices.size == min(n_rows, n_cols)
@@ -31,4 +32,3 @@ def sampling_operator(n_rows, n_cols, indices=None):
         S = sampling_operator(n_cols, n_rows, indices)
         S = S.T
     return S
-

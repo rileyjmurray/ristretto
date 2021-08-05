@@ -49,7 +49,7 @@ def get_version():
 VERSION = get_version()
 
 SCIPY_MIN_VERSION = '0.0.13'
-NUMPY_MIN_VERSION = '1.8.2'
+NUMPY_MIN_VERSION = '1.17'
 CYTHON_MIN_VERSION = '0.23'
 
 # Custom clean command to remove build artifacts from scikit-learn setup.py
