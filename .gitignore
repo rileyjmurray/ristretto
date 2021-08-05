@@ -5,6 +5,9 @@ docs/generated
 *.sw[p,o]
 *.mypy_cache
 
+# Development environment
+.idea/*
+
 # Created by https://www.gitignore.io/api/python
 
 ### Python ###
