@@ -30,7 +30,7 @@ def project_out(Qi, Q, as_list=False):
 class FRQB:
 
     def __init__(self, rf: FRRF):
-        self.rf = rf
+        self.rangefinder = rf
 
     def __call__(self, A, k, gen):
         """
@@ -38,7 +38,7 @@ class FRQB:
         factors in a QB decomposition.
         """
         gen = np.random.default_rng(gen)
-        Q = self.rf(A, k, gen)
+        Q = self.rangefinder(A, k, gen)
         B = Q.T @ A
         return Q, B
 
