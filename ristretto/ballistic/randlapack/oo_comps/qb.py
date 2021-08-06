@@ -5,21 +5,187 @@ from ristretto.ballistic.randlapack.oo_comps.rangefinders import FRRF, PowerRang
 from ristretto.ballistic.randlapack.oo_comps.powering import SORS, PoweredSketchOp
 
 
-def orth(S):
-    return la.qr(S, mode='economic')
+###############################################################################
+#       Classic implementations, exposing fewest possible parameters.
+###############################################################################
 
 
-def project_out(Qi, Q, as_list=False):
-    #TODO: perform operation in-place.
-    if as_list:
-        #TODO: implement and use in qb_b_fet.
-        # NOTE: Q is accessed in a few different places in
-        #       qb_b_pe, so this wouldn't be enough to avoid
-        #       updating Q to be contiguous at each iteration.
-        raise NotImplementedError()
-    else:
-        Qi = Qi - Q @ (Q.T @ Qi)
-        return Qi
+def qb(num_passes, A, k, gen):
+    """
+    Return matrices (Q, B) from a rank-k QB factorization of A.
+    Use a Gaussian sketching matrix and pass over A a total of
+    num_passes times.
+
+    Parameters
+    ----------
+    num_passes : int
+        Total number of passes over A. We require num_passes >= 2.
+
+    A : Union[ndarray, spmatrix, LinearOperator]
+        Data matrix to approximate.
+
+    k : int
+        Target rank for the approximation of A. Includes any oversampling.
+        (E.g., if you want to be near the optimal (Eckhart-Young) error
+        for a rank 20 approximation of A, then you might want to set k=25.)
+        We require k <= min(A.shape).
+
+    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        Determines the numpy Generator object that manages randomness
+        in this function call.
+
+    Returns
+    -------
+    Q : ndarray
+        Has shape (A.shape[0], k). Columns are orthonormal.
+
+    B : ndarray
+        Has shape (k, A.shape[1]).
+
+    Notes
+    -----
+    We perform (num_passes - 2) steps of subspace iteration, and
+    stabilize subspace iteration by a QR factorization at every step.
+    """
+    gen = np.random.default_rng(gen)
+    # Build the QB function
+    rf = PowerRangeFinder(num_passes - 1, 1, orth, gaussian_operator)
+    qb_ = FRQB(rf)
+    # Call the QB function
+    Q, B = qb_(A, k, gen)
+    return Q, B
+
+
+def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, gen):
+    """
+    Iteratively build an approximate QB factorization of A,
+    which terminates once either of the following conditions
+    is satisfied
+        (1)  || A - Q B ||_Fro <= tol
+    or
+        (2) Q has max_rank columns.
+
+    Each iteration involves sketching A from the right by a sketching
+    matrix with "blk" columns. The sketching matrix is constructed by
+    applying (inner_num_pass - 2) steps of subspace iteration to a
+    Gaussian matrix with blk columns.
+
+    Parameters
+    ----------
+    inner_num_pass : int
+        Number of passes over A in each iteration of this blocked QB
+        algorithm. We require inner_num_pass >= 2.
+
+    overwrite_A : bool
+        If True, then this method modifies A in-place. If False, then
+        we start the algorithm by constructing a complete copy of A.
+
+    A : Union[ndarray, spmatrix, LinearOperator]
+        Data matrix to approximate.
+
+    blk : int
+        The block size in this blocked QB algorithm. Add this many columns
+        to Q at each iteration (except possibly the final iteration).
+
+    max_rank : int
+        Terminate if Q.shape[1] == max_rank.
+
+    tol : float
+        Terminate if ||A - Q B||_Fro <= tol.
+
+    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        Determines the numpy Generator object that manages randomness
+        in this function call.
+
+    Returns
+    -------
+    Q : ndarray
+        Has the same number of rows of A, and orthonormal columns.
+
+    B : ndarray
+        Has the same number of columns of A.
+
+    Notes
+    -----
+    The number of columns in Q increase by "blk" at each iteration, unless
+    that would bring Q.shape[1] > max_rank. In that case, the final
+    iteration only adds enough columns to Q so that Q.shape[1] == max_rank.
+
+    We perform (inner_num_pass - 2) steps of subspace iteration for each
+    block of the QB factorization. We stabilize subspace iteration with
+    QR factorization at each step.
+    """
+    gen = np.random.default_rng(gen)
+    # Build the QB function
+    rf = PowerRangeFinder(inner_num_pass, 1, orth, gaussian_operator)
+    qb = BlockedQB1(rf, overwrite_A)
+    # Call the QB function
+    Q, B = qb(A, blk, tol, max_rank, gen)
+    return Q, B
+
+
+def blk_qb_2(num_passes, A, blk, tol, max_rank, gen):
+    """
+    Iteratively build an approximate QB factorization of A,
+    which terminates once either of the following conditions
+    is satisfied
+        (1)  || A - Q B ||_Fro <= tol
+    or
+        (2) Q has max_rank columns.
+
+    We start by obtaining a sketching matrix of shape
+    (A.shape[1], max_rank), using (num_passes - 1) steps of
+    subspace iteration on a random Gaussian matrix with
+    max_rank columns. Then we perform two more passes over A
+    before beginning iterative construction of (Q, B). Each
+    iteration adds at most "blk" columns to Q and rows to B.
+
+    Parameters
+    ----------
+    num_passes : int
+        Total number of passes over A in an efficient implementation
+        of this algorithm (see Notes). We require num_passes >= 1.
+
+    A : Union[ndarray, spmatrix, LinearOperator]
+        Data matrix to approximate.
+
+    blk : int
+        The block size in this blocked QB algorithm. Add this many columns
+        to Q at each iteration (except possibly the final iteration).
+
+    max_rank : int
+        Terminate if Q.shape[1] == max_rank.
+
+    tol : float
+        Terminate if ||A - Q B||_Fro <= tol.
+
+    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        Determines the numpy Generator object that manages randomness
+        in this function call.
+
+    Returns
+    -------
+    Q : ndarray
+        Has the same number of rows of A, and orthonormal columns.
+
+    B : ndarray
+        Has the same number of columns of A.
+
+    Notes
+    -----
+    With its current implementation, this function requires num_passes + 1
+    passes over A. An efficient implementation using two-in-one sketching
+    could run this algorithm using only num_passes passes over A.
+
+    We stabilize subspace iteration with a QR factorization at each step.
+    """
+    gen = np.random.default_rng(gen)
+    # Build the QB function
+    sk_op = PoweredSketchOp(num_passes, 1, orth, gaussian_operator)
+    qb_ = BlockedQB2(sk_op)
+    # Call the QB function
+    Q, B = qb_(A, blk, tol, max_rank, gen)
+    return Q, B
 
 
 ###############################################################################
@@ -35,7 +201,8 @@ class FRQB:
     def __call__(self, A, k, gen):
         """
         Return a rank-k approximation of A, represented by its
-        factors in a QB decomposition.
+        factors in a QB decomposition. Construct the factor
+        Q by calling this FRQB object's rangefinder.
         """
         gen = np.random.default_rng(gen)
         Q = self.rangefinder(A, k, gen)
@@ -54,7 +221,7 @@ class BaseBlockedQB:
         Iteratively build an approximate QB factorization of A:
             The matrix Q has orthonormal columns.
             The matrix B is generally unstructured.
-        Add "blk" columns to Q (resp. rows to B) at each iteration.
+        Add at most "blk" columns to Q at each iteration.
 
         Stop once either of the following are satisfied
             (1)  || A - Q B || <= tol
@@ -71,6 +238,55 @@ class BlockedQB1(BaseBlockedQB):
         self.overwrite_a = overwrite_a
 
     def __call__(self, A, blk, tol, max_rank, gen):
+        """
+        Iteratively build an approximate QB factorization of A,
+        which terminates once either of the following conditions
+        is satisfied
+            (1)  || A - Q B ||_Fro <= tol
+        or
+            (2) Q has max_rank columns.
+
+        The algorithm starts by initializing empty matrices (Q, B).
+        The i-th iteration of this algorithm uses this object's
+        internal rangefinder to obtain a rank-"blk" QB factorization of A.
+        Given the factors (Q_i, B_i) of the current iteration, we append
+        Q_i to the columns to Q and we append B_i to the rows to B. Then we
+        subtract Q_i @ B_i off from A and check termination criteria. If
+        termination criteria aren't satisfied, we go to iteration (i+1).
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix to approximate.
+
+        blk : int
+            The block size in this blocked QB algorithm. Add this many columns
+            to Q at each iteration (except possibly the final iteration).
+
+        max_rank : int
+            Maximum number of columns in Q. Terminate if Q.shape[1] == max_rank.
+
+        tol : float
+            Terminate if ||A - Q B||_Fro <= tol.
+
+        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages randomness
+            in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Has the same number of rows of A, and orthonormal columns.
+
+        B : ndarray
+            Has the same number of columns of A.
+
+        Notes
+        -----
+        The number of columns in Q increase by "blk" at each iteration, unless
+        that would bring Q.shape[1] > max_rank. In that case, the final
+        iteration only adds enough columns to Q so that Q.shape[1] == max_rank.
+        """
         if not self.overwrite_a:
             """
             TODO: Write a version of this function that doesn't
@@ -111,6 +327,54 @@ class BlockedQB2(BaseBlockedQB):
         self.sketching_matrix_generator = sk_op
 
     def __call__(self, A, blk, tol, max_rank, gen):
+        """
+        Iteratively build an approximate QB factorization of A,
+        which terminates once either of the following conditions
+        is satisfied
+            (1)  || A - Q B ||_Fro <= tol
+        or
+            (2) Q has max_rank columns.
+
+        We start by obtaining a sketching matrix of shape
+        (A.shape[1], max_rank) from this object's sketching_matrix_generator.
+        Then we perform two more passes over A before beginning
+        iterative construction of (Q, B). Each iteration adds at
+        most "blk" columns to Q and rows to B.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix to approximate.
+
+        blk : int
+            The block size in this blocked QB algorithm. Add this many columns
+            to Q at each iteration (except possibly the final iteration).
+
+        max_rank : int
+            Maximum number of columns in Q. Terminate if Q.shape[1] == max_rank.
+
+        tol : float
+            Terminate if ||A - Q B||_Fro <= tol.
+
+        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages randomness
+            in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Has the same number of rows of A, and orthonormal columns.
+
+        B : ndarray
+            Has the same number of columns of A.
+
+        Notes
+        -----
+        With its current implementation, this function requires at passes
+        over A once the sketching matrix has been generated. An efficient
+        implementation would only require one pass over A after the sketching
+        matrix has been generated.
+        """
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
         if tol < np.inf:
@@ -142,35 +406,22 @@ class BlockedQB2(BaseBlockedQB):
 
 
 ###############################################################################
-#       Classic implementations, exposing fewest possible parameters.
+#      Helper functions
 ###############################################################################
 
 
-def qb(num_passes, A, k, gen):
-    gen = np.random.default_rng(gen)
-    # Build the QB function
-    rf = PowerRangeFinder(num_passes, 1, orth, gaussian_operator)
-    qb_obj = FRQB(rf)
-    # Call the QB function
-    Q, B = qb_obj(A, k, gen)
-    return Q, B
+def orth(S):
+    return la.qr(S, mode='economic')
 
 
-def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, gen):
-    gen = np.random.default_rng(gen)
-    # Build the QB function
-    rf = PowerRangeFinder(inner_num_pass, 1, orth, gaussian_operator)
-    qb = BlockedQB1(rf, overwrite_A)
-    # Call the QB function
-    Q, B = qb(A, blk, tol, max_rank, gen)
-    return Q, B
-
-
-def blk_qb_2(num_passes, A, blk, tol, max_rank, gen):
-    gen = np.random.default_rng(gen)
-    # Build the QB function
-    sk_op = PoweredSketchOp(num_passes, 1, orth, gaussian_operator)
-    qb = BlockedQB2(sk_op)
-    # Call the QB function
-    Q, B = qb(A, blk, tol, max_rank, gen)
-    return Q, B
+def project_out(Qi, Q, as_list=False):
+    #TODO: perform operation in-place.
+    if as_list:
+        #TODO: implement and use in qb_b_fet.
+        # NOTE: Q is accessed in a few different places in
+        #       qb_b_pe, so this wouldn't be enough to avoid
+        #       updating Q to be contiguous at each iteration.
+        raise NotImplementedError()
+    else:
+        Qi = Qi - Q @ (Q.T @ Qi)
+        return Qi
