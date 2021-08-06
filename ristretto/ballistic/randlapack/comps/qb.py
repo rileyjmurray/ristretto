@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.linalg as la
-from ristretto.ballistic.rblas.powering import powered_range_sketch_op
+from ristretto.ballistic.randlapack.comps.powering import powered_range_sketch_op
 from ristretto.ballistic.rblas import sketching as sk
 from ristretto.ballistic.randlapack.comps.rangefinders import power_rangefinder
 

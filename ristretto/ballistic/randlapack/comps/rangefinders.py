@@ -10,7 +10,7 @@ Routines for the orthogonal rangefinder problem:
 import numpy as np
 import scipy.linalg as la
 from ristretto.ballistic.rblas.sketching import gaussian_operator
-from ristretto.ballistic.rblas.powering import powered_range_sketch_op
+from ristretto.ballistic.randlapack.comps.powering import powered_range_sketch_op
 
 
 def power_rangefinder(A, k, num_pass, sketch_op_gen=None, gen=None, stabilizer=None, pps=1):
@@ -40,78 +40,3 @@ def power_rangefinder(A, k, num_pass, sketch_op_gen=None, gen=None, stabilizer=N
     Y = A @ S
     Q = la.qr(Y, mode='economic')[0]
     return Q
-
-
-"""
-Experiment with an object-oriented interface.
-"""
-
-
-class FRRangeFinder:
-    """
-    Fixed rank rangefinder
-    """
-
-    def __call__(self, A, k, gen, **kwargs):
-        """
-        Find a matrix Q that has k orthonormal columns where || A - Q Q' A ||
-        is "reasonably" close to the error || A - A_k || of the best rank-k
-        approximation of A. The range of Q serves as an approximation for the
-        the span of the top k left singular vectors of A.
-
-        Parameters
-        ----------
-        A : Union[ndarray, spmatrix, LinearOperator]
-            Data matrix whose range is to be approximated.
-
-        k : int
-            Number of columns in Q.
-
-        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
-            Determines the numpy Generator object that manages any and all
-            randomness in this function call.
-
-        Returns
-        -------
-
-        """
-        raise NotImplementedError()
-
-
-class PowerRangeFinder(FRRangeFinder):
-    """
-    When building the matrix Q we are allowed to access A or A.T a total
-    of num_pass times. See the function "power_rangefinder_sketch_op" for the
-    meaning of the parameter "pps".
-
-    sketch_op_gen is a function handle that accepts two positive integer arguments
-    and one argument of various possible types (None, int, np.random.SeedSequence,
-    np.random.BitGenerator, np.random.Generator) to control the random number
-    generation process. The value
-        mat = sketch_op_gen(k1, k2, gen)
-    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided, we define
-    it so that it generates a matrix with iid standard normal entries.
-    """
-
-    def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
-
-        if sketch_op_gen is None:
-            sketch_op_gen = gaussian_operator
-
-        if stabilizer is None:
-            def stabilizer(mat):
-                return la.qr(mat, mode='economic')[0]
-
-        self.num_pass = num_pass
-        self.sketch_op_gen = sketch_op_gen
-        self.stabilizer = stabilizer
-        self.pps = pps
-
-    def __call__(self, A, k, gen, **kwargs):
-        gen = np.random.default_rng(gen)
-        S = powered_range_sketch_op(A, k,
-                                    self.num_pass, self.sketch_op_gen,
-                                    self.stabilizer, self.pps, gen)
-        Y = A @ S
-        Q = la.qr(Y, mode='economic')[0]
-        return Q
