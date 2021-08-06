@@ -10,7 +10,46 @@ Routines for the orthogonal rangefinder problem:
 import numpy as np
 import scipy.linalg as la
 from ristretto.ballistic.rblas.sketching import gaussian_operator
-from ristretto.ballistic.randlapack.comps.powering import powered_range_sketch_op
+from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
+
+
+def orth(S):
+    return la.qr(S, mode='economic')
+
+
+class FRRF:
+    """Fixed rank rangefinder"""
+
+    def __call__(self, A, k, gen, **kwargs):
+        """
+        Find a matrix Q that has k orthonormal columns where || A - Q Q' A ||
+        is "reasonably" close to the error || A - A_k || of the best rank-k
+        approximation of A. The range of Q serves as an approximation for the
+        the span of the top k left singular vectors of A.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix whose range is to be approximated.
+
+        k : int
+            Number of columns in Q.
+
+        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Notes
+        -----
+        Here is the simplest possible implementation:
+
+            gen = np.random.default_rng(gen)
+            S = gen.standard_normal((A.shape[1], k))
+            Y = A @ S
+            Q = la.qr(Y, mode='economic')[0]
+
+        """
+        raise NotImplementedError()
 
 
 def power_rangefinder(A, k, num_pass,
@@ -38,7 +77,30 @@ def power_rangefinder(A, k, num_pass,
         def stabilizer(mat):
             return la.qr(mat, mode='economic')[0]
 
-    S = powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen)
-    Y = A @ S
-    Q = la.qr(Y, mode='economic')[0]
+    rf = PowerRangeFinder(num_pass, pps, stabilizer, sketch_op_gen)
+    Q = rf(A, k, gen)
     return Q
+
+
+class PowerRangeFinder(FRRF):
+
+    def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
+
+        if sketch_op_gen is None:
+            sketch_op_gen = gaussian_operator
+
+        if stabilizer is None:
+            stabilizer = orth
+
+        self.num_pass = num_pass
+        self.sketch_op_gen = sketch_op_gen
+        self.stabilizer = stabilizer
+        self.pps = pps
+
+    def __call__(self, A, k, gen, **kwargs):
+        gen = np.random.default_rng(gen)
+        sk_op = PoweredSketchOp(self.num_pass, self.pps, self.stabilizer, self.sketch_op_gen)
+        S = sk_op(A, k, gen)
+        Y = A @ S
+        Q = la.qr(Y, mode='economic')[0]
+        return Q
