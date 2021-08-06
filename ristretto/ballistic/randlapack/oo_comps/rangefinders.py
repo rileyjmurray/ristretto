@@ -18,9 +18,7 @@ def orth(S):
 
 
 class FRRF:
-    """
-    Fixed rank rangefinder
-    """
+    """Fixed rank rangefinder"""
 
     def __call__(self, A, k, gen, **kwargs):
         """

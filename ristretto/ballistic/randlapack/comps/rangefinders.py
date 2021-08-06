@@ -13,7 +13,9 @@ from ristretto.ballistic.rblas.sketching import gaussian_operator
 from ristretto.ballistic.randlapack.comps.powering import powered_range_sketch_op
 
 
-def power_rangefinder(A, k, num_pass, sketch_op_gen=None, gen=None, stabilizer=None, pps=1):
+def power_rangefinder(A, k, num_pass,
+                      sketch_op_gen=None, gen=None,
+                      stabilizer=None, pps=1):
     """
     When building the matrix Q we are allowed to access A or A.T a total
     of num_pass times. See the function "power_rangefinder_sketch_op" for the

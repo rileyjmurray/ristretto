@@ -14,7 +14,22 @@ def default_sketch_stab(sketch_op, stabilizer):
     return sketch_op, stabilizer
 
 
-def qb(A, k, num_pass, sketch_op=None, gen=None, stabilizer=None, pps=1):
+def project_out(Qi, Q, as_list=False):
+    #TODO: perform operation in-place.
+    if as_list:
+        #TODO: implement and use in qb_b_fet.
+        # NOTE: Q is accessed in a few different places in
+        #       qb_b_pe, so this wouldn't be enough to avoid
+        #       updating Q to be contiguous at each iteration.
+        raise NotImplementedError()
+    else:
+        Qi = Qi - Q @ (Q.T @ Qi)
+        return Qi
+
+
+def qb(A, k, num_pass,
+       sketch_op=None, gen=None,
+       stabilizer=None, pps=1):
     sketch_op, stabilizer = default_sketch_stab(sketch_op, stabilizer)
     gen = np.random.default_rng(gen)
     Q = power_rangefinder(A, k, num_pass, sketch_op, gen, pps)
@@ -22,16 +37,18 @@ def qb(A, k, num_pass, sketch_op=None, gen=None, stabilizer=None, pps=1):
     return Q, B
 
 
-def qb_b_fet(A, blk, tol, p,
-             overwrite_a=False, sketch_op=None, gen=None,
+def qb_b_fet(A, blk, tol, p, overwrite_a=False,
+             sketch_op=None, gen=None,
              stabilizer=None, pps=1, max_rank=np.inf):
     if not overwrite_a:
-        #TODO: Write a version of this function that doesn't
-        # need to copy A. Essentially, requires reaching inside
-        # power_rangefinder so that accesses to "A" are actually
-        # accesses to "A - Q @ B" for the current values of (Q, B).
-        # The Python implementation could do this pretty easily with
-        # a LinearOperator.
+        """
+        TODO: Write a version of this function that doesn't
+        need to copy A. Essentially, requires reaching inside
+        power_rangefinder so that accesses to "A" are actually
+        accesses to "A - Q @ B" for the current values of (Q, B).
+        The Python implementation could do this pretty easily with
+        a LinearOperator.
+        """
         A = np.copy(A)
     sketch_op, stabilizer = default_sketch_stab(sketch_op, stabilizer)
     gen = np.random.default_rng(gen)
@@ -58,7 +75,9 @@ def qb_b_fet(A, blk, tol, p,
     return Q, B
 
 
-def qb_b_pe(A, blk, ell, p, sketch_op=None, gen=None, stabilizer=None, pps=1, tol=np.inf):
+def qb_b_pe(A, blk, ell, p,
+            sketch_op=None, gen=None,
+            stabilizer=None, pps=1, tol=np.inf):
     sketch_op, stabilizer = default_sketch_stab(sketch_op, stabilizer)
     Q = np.empty(shape=(A.shape[0], 0), dtype=float)
     B = np.empty(shape=(0, A.shape[1]), dtype=float)
@@ -88,16 +107,3 @@ def qb_b_pe(A, blk, ell, p, sketch_op=None, gen=None, stabilizer=None, pps=1, to
             if sqnorm_A <= sqtol:
                 break  # early stopping
     return Q, B
-
-
-def project_out(Qi, Q, as_list=False):
-    #TODO: perform operation in-place.
-    if as_list:
-        #TODO: implement and use in qb_b_fet.
-        # NOTE: Q is accessed in a few different places in
-        #       qb_b_pe, so this wouldn't be enough to avoid
-        #       updating Q to be contiguous at each iteration.
-        raise NotImplementedError()
-    else:
-        Qi = Qi - Q @ (Q.T @ Qi)
-        return Qi

@@ -4,12 +4,12 @@ import numpy as np
 class SORS:
     """
     Semi-Oblivious row sketch. Given a matrix A and a positive
-    integer k, generates a matrix S for later use in sketching
-    Y = A @ S. By virtue of taking linear combinations of the
-    columns, it's essentially sketching the rows of A.
+    integer k, generates a matrix S with k columns, for later use
+    in sketching Y = A @ S. By virtue of taking linear combinations of the
+    columns, the matrix S is essentially sketching the rows of A.
     """
 
-    def __call__(self, A, k, gen, **kwargs):
+    def __call__(self, A, k, gen):
         """
         Return a matrix S where range(S) is "reasonably" well
         aligned with the span of the top k right singular vectors
@@ -65,7 +65,7 @@ class PoweredSketchOp(SORS):
         self.stabilizer = stabilizer
         self.sketch_op_gen = sketch_op_gen
 
-    def __call__(self, A, k, gen, **kwargs):
+    def __call__(self, A, k, gen):
         gen = np.random.default_rng(gen)
         if self.num_pass % 2 == 1:
             S = self.sketch_op_gen(A.shape[1], k, gen)

@@ -67,7 +67,7 @@ class BaseBlockedQB:
 class BlockedQB1(BaseBlockedQB):
 
     def __init__(self, rf: FRRF, overwrite_a=False):
-        self.rf = rf
+        self.rangefinder = rf
         self.overwrite_a = overwrite_a
 
     def __call__(self, A, blk, tol, max_rank, gen):
@@ -91,7 +91,7 @@ class BlockedQB1(BaseBlockedQB):
                 blk = int(max_rank - B.shape[0])  # final block
             # Standard QB, but step in to make extra sure that
             #   the columns of "Qi" are orthogonal to cols of current "Q".
-            Qi = self.rf(A, blk, gen)
+            Qi = self.rangefinder(A, blk, gen)
             Qi = project_out(Qi, Q, as_list=False)
             Qi = la.qr(Qi, mode='economic')[0]
             Bi = Qi.T @ A
@@ -108,7 +108,7 @@ class BlockedQB1(BaseBlockedQB):
 class BlockedQB2(BaseBlockedQB):
 
     def __init__(self, sk_op: SORS):
-        self.sk_op = sk_op
+        self.sketching_matrix_generator = sk_op
 
     def __call__(self, A, blk, tol, max_rank, gen):
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
@@ -117,7 +117,7 @@ class BlockedQB2(BaseBlockedQB):
             sq_norm_A = la.norm(A, ord='fro') ** 2
             sq_tol = tol**2
         gen = np.random.default_rng(gen)
-        S = self.sk_op(A, blk, gen)
+        S = self.sketching_matrix_generator(A, blk, gen)
         G = A @ S
         H = A.T @ G
         for i in range(int(np.ceil(max_rank/blk))):

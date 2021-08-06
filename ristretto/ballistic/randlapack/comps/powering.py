@@ -40,26 +40,14 @@ def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen=
     # q is an even integer; need to compute
     #   S := (A' A)^q S
     # up to intermediate stabilization.
-    if q > 0:
-        S = charge_sample(A, S, q, stabilizer, pps, passes_done)
-    return S
-
-
-def charge_sample(A, S, q, stabilizer, pps, pass_count):
-    """
-    Construct a matrix T where range(T) = range( (A' A)^q S ).
-    Call the stabilizer every "pps" passes over the matrix A,
-    assuming "pass_count" number of passes have occurred in the
-    calling function.
-    """
     while q > 0:
         S = A @ S
-        pass_count += 1
-        if pass_count % pps == 0:
+        passes_done += 1
+        if passes_done % pps == 0:
             S = stabilizer(S)
         S = A.T @ S
-        pass_count += 1
-        if pass_count % pps == 0:
+        passes_done += 1
+        if passes_done % pps == 0:
             S = stabilizer(S)
         q -= 1
     return S
