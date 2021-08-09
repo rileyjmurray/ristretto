@@ -15,7 +15,8 @@ def a_times_inv_r(A, R):
 
     def mv(vec):
         np.copyto(work, vec)
-        solve_triangular(R, work, lower=False, check_finite=False, overwrite_b=True)
+        solve_triangular(R, work, lower=False, check_finite=False,
+                         overwrite_b=True)
         return A @ work
 
     def rmv(vec):
@@ -55,9 +56,11 @@ def upper_tri_precond_lsqr(A, b, R, tol, iter_lim, x0=None):
     A_precond = a_times_inv_r(A, R)
     if x0 is not None:
         y0 = (R @ x0).ravel()
-        result = sparla.lsqr(A_precond, b, atol=tol, btol=tol, iter_lim=iter_lim, x0=y0)
+        result = sparla.lsqr(A_precond, b, atol=tol, btol=tol,
+                             iter_lim=iter_lim, x0=y0)
     else:
-        result = sparla.lsqr(A_precond, b, atol=tol, btol=tol, iter_lim=iter_lim)
+        result = sparla.lsqr(A_precond, b, atol=tol, btol=tol,
+                             iter_lim=iter_lim)
     solve_triangular(R, result[0], lower=False, overwrite_b=True)
     return result
 
@@ -96,7 +99,8 @@ def pinv_precond_lsqr(A, b, N, tol, iter_lim):
         np.dot(A.T, vec, out=work)
         return N.T @ work
 
-    A_precond = sparla.LinearOperator(shape=(A.shape[0], N.shape[1]), matvec=mv, rmatvec=rmv)
+    A_precond = sparla.LinearOperator(shape=(A.shape[0], N.shape[1]),
+                                      matvec=mv, rmatvec=rmv)
     result = sparla.lsqr(A_precond, b, atol=tol, btol=tol, iter_lim=iter_lim)
     result[0] = N @ result[0]
     return result
@@ -110,13 +114,15 @@ def lr_precond_gram(A, R):
 
     def mv(vec):
         np.copyto(work1, vec)
-        solve_triangular(R, work1, lower=False, check_finite=False, overwrite_b=True)
+        solve_triangular(R, work1, lower=False, check_finite=False,
+                         overwrite_b=True)
         np.dot(A, work1, out=work2)
         np.dot(A.T, work2, out=work1)
         res = solve_triangular(R, work1, 'T', lower=False, check_finite=False)
         return res
 
-    AtA_precond = sparla.LinearOperator(shape=(A.shape[1], A.shape[1]), matvec=mv, rmatvec=mv)
+    AtA_precond = sparla.LinearOperator(shape=(A.shape[1], A.shape[1]),
+                                        matvec=mv, rmatvec=mv)
     return AtA_precond
 
 
@@ -152,8 +158,10 @@ def upper_tri_precond_cg(A, b, R, tol, iter_lim, x0=None):
     b_precond = solve_triangular(R, b, 'T', lower=False, check_finite=False)
     if x0 is not None:
         y0 = (R @ x0).ravel()
-        result = sparla.cg(AtA_precond, b_precond, atol=tol, btol=tol, iter_lim=iter_lim, x0=y0)
+        result = sparla.cg(AtA_precond, b_precond, atol=tol, btol=tol,
+                           iter_lim=iter_lim, x0=y0)
     else:
-        result = sparla.cg(AtA_precond, b_precond, atol=tol, btol=tol, iter_lim=iter_lim)
+        result = sparla.cg(AtA_precond, b_precond, atol=tol, btol=tol,
+                           iter_lim=iter_lim)
     solve_triangular(R, result[0], lower=False, overwrite_b=True)
     return result

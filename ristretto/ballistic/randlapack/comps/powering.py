@@ -1,7 +1,8 @@
 import numpy as np
 
 
-def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen=None):
+def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps,
+                            gen=None):
     """
     Use (num_pass - 1) passes over the matrix A to generate a matrix S where
     range(S) is (hopefully) closely aligned with the span of A's top right
@@ -15,7 +16,7 @@ def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen=
         if num_pass is even
             S = (A' A)^((num_pass - 2)//2) A' sketch_op_gen(m, k, generator)
 
-        where "generator := np.random.default_rng(gen)" is a Generator object
+        where "generator := np.random.default_rng(rng)" is a Generator object
         from NumPy.random.
 
     That description is "rough" because repeated applications of A will cause
@@ -25,8 +26,8 @@ def powered_range_sketch_op(A, k, num_pass, sketch_op_gen, stabilizer, pps, gen=
     behaved basis for its range. The most common choice of "stabilizer" is to
     return the factor Q from an (economic) QR factorization.
     """
-    pso = PoweredSketchOp(num_pass, pps, stabilizer, sketch_op_gen)
-    S = pso(A, k, gen)
+    S = PoweredSketchOp(num_pass, pps,
+                        stabilizer, sketch_op_gen).exec(A, k, gen)
     return S
 
 
@@ -38,7 +39,7 @@ class SORS:
     columns, the matrix S is essentially sketching the rows of A.
     """
 
-    def __call__(self, A, k, gen):
+    def exec(self, A, k, rng):
         """
         Return a matrix S where range(S) is "reasonably" well
         aligned with the span of the top k right singular vectors
@@ -55,7 +56,7 @@ class SORS:
         k : int
             Number of columns of S.
 
-        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
         """
@@ -76,7 +77,7 @@ class PoweredSketchOp(SORS):
         if num_pass is even
             S = (A' A)^((num_pass - 2)//2) A' sketch_op_gen(m, k, generator)
 
-        where "generator := np.random.default_rng(gen)" is a Generator object
+        where "generator := np.random.default_rng(rng)" is a Generator object
         from NumPy.random.
 
     That description is "rough" because repeated applications of A will cause
@@ -94,14 +95,14 @@ class PoweredSketchOp(SORS):
         self.stabilizer = stabilizer
         self.sketch_op_gen = sketch_op_gen
 
-    def __call__(self, A, k, gen):
-        gen = np.random.default_rng(gen)
+    def exec(self, A, k, rng):
+        rng = np.random.default_rng(rng)
         if self.num_pass % 2 == 1:
-            S = self.sketch_op_gen(A.shape[1], k, gen)
+            S = self.sketch_op_gen(A.shape[1], k, rng)
             passes_done = 0
             q = (self.num_pass - 1) // 2
         else:
-            S = A.T @ self.sketch_op_gen(A.shape[0], k, gen)
+            S = A.T @ self.sketch_op_gen(A.shape[0], k, rng)
             passes_done = 1
             if self.pps == 1:
                 S = self.stabilizer(S)

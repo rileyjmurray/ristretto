@@ -14,13 +14,13 @@ from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
 
 
 def orth(S):
-    return la.qr(S, mode='economic')
+    return la.qr(S, mode='economic')[0]
 
 
 class FRRF:
     """Fixed rank rangefinder"""
 
-    def __call__(self, A, k, gen, **kwargs):
+    def exec(self, A, k, rng):
         """
         Find a matrix Q that has k orthonormal columns where || A - Q Q' A ||
         is "reasonably" close to the error || A - A_k || of the best rank-k
@@ -35,7 +35,7 @@ class FRRF:
         k : int
             Number of columns in Q.
 
-        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
 
@@ -43,8 +43,8 @@ class FRRF:
         -----
         Here is the simplest possible implementation:
 
-            gen = np.random.default_rng(gen)
-            S = gen.standard_normal((A.shape[1], k))
+            rng = np.random.default_rng(rng)
+            S = rng.standard_normal((A.shape[1], k))
             Y = A @ S
             Q = la.qr(Y, mode='economic')[0]
 
@@ -53,54 +53,47 @@ class FRRF:
 
 
 def power_rangefinder(A, k, num_pass,
-                      sketch_op_gen=None, gen=None,
+                      sketch_op_gen=None, rng=None,
                       stabilizer=None, pps=1):
     """
     When building the matrix Q we are allowed to access A or A.T a total
     of num_pass times. See the function "power_rangefinder_sketch_op" for the
     meaning of the parameter "pps".
 
-    sketch_op_gen is a function handle that accepts two positive integer arguments
-    and one argument of various possible types (None, int, np.random.SeedSequence,
-    np.random.BitGenerator, np.random.Generator) to control the random number
-    generation process. The value
-        mat = sketch_op_gen(k1, k2, gen)
-    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided, we define
-    it so that it generates a matrix with iid standard normal entries.
+    sketch_op_gen is a function handle that accepts two positive integer
+    arguments and one argument of various possible types (None, int,
+    np.random.SeedSequence, np.random.BitGenerator, np.random.Generator) to
+    control the random number generation process. The value
+        mat = sketch_op_gen(k1, k2, rng)
+    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided,
+    we define it so that it generates a matrix with iid standard normal entries.
     """
-    gen = np.random.default_rng(gen)
-
+    rng = np.random.default_rng(rng)
     if sketch_op_gen is None:
         sketch_op_gen = gaussian_operator
-
     if stabilizer is None:
-        def stabilizer(mat):
-            return la.qr(mat, mode='economic')[0]
-
+        stabilizer = orth
     rf = PowerRangeFinder(num_pass, pps, stabilizer, sketch_op_gen)
-    Q = rf(A, k, gen)
+    Q = rf.exec(A, k, rng)
     return Q
 
 
 class PowerRangeFinder(FRRF):
 
     def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
-
         if sketch_op_gen is None:
             sketch_op_gen = gaussian_operator
-
         if stabilizer is None:
             stabilizer = orth
-
         self.num_pass = num_pass
         self.sketch_op_gen = sketch_op_gen
         self.stabilizer = stabilizer
         self.pps = pps
 
-    def __call__(self, A, k, gen, **kwargs):
-        gen = np.random.default_rng(gen)
-        sk_op = PoweredSketchOp(self.num_pass, self.pps, self.stabilizer, self.sketch_op_gen)
-        S = sk_op(A, k, gen)
+    def exec(self, A, k, rng):
+        rng = np.random.default_rng(rng)
+        S = PoweredSketchOp(self.num_pass, self.pps,  self.stabilizer,
+                            self.sketch_op_gen).exec(A, k, rng)
         Y = A @ S
         Q = la.qr(Y, mode='economic')[0]
         return Q

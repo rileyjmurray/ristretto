@@ -1,7 +1,8 @@
 import numpy as np
 import scipy.linalg as la
 from ristretto.ballistic.rblas.sketching import gaussian_operator
-from ristretto.ballistic.randlapack.comps.rangefinders import FRRF, PowerRangeFinder
+from ristretto.ballistic.randlapack.comps.rangefinders import FRRF,  \
+    PowerRangeFinder
 from ristretto.ballistic.randlapack.comps.powering import SORS, PoweredSketchOp
 
 
@@ -10,7 +11,7 @@ from ristretto.ballistic.randlapack.comps.powering import SORS, PoweredSketchOp
 ###############################################################################
 
 
-def qb(num_passes, A, k, gen):
+def qb(num_passes, A, k, rng):
     """
     Return matrices (Q, B) from a rank-k QB factorization of A.
     Use a Gaussian sketching matrix and pass over A a total of
@@ -30,7 +31,7 @@ def qb(num_passes, A, k, gen):
         for a rank 20 approximation of A, then you might want to set k=25.)
         We require k <= min(A.shape).
 
-    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+    rng : Union[None, int, SeedSequence, BitGenerator, Generator]
         Determines the numpy Generator object that manages randomness
         in this function call.
 
@@ -47,16 +48,16 @@ def qb(num_passes, A, k, gen):
     We perform (num_passes - 2) steps of subspace iteration, and
     stabilize subspace iteration by a QR factorization at every step.
     """
-    gen = np.random.default_rng(gen)
+    rng = np.random.default_rng(rng)
     # Build the QB function
     rf = PowerRangeFinder(num_passes - 1, 1, orth, gaussian_operator)
     qb_ = FRQB(rf)
     # Call the QB function
-    Q, B = qb_(A, k, gen)
+    Q, B = qb_.exec(A, k, rng)
     return Q, B
 
 
-def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, gen):
+def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
     """
     Iteratively build an approximate QB factorization of A,
     which terminates once either of the following conditions
@@ -93,7 +94,7 @@ def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, gen):
     tol : float
         Terminate if ||A - Q B||_Fro <= tol.
 
-    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+    rng : Union[None, int, SeedSequence, BitGenerator, Generator]
         Determines the numpy Generator object that manages randomness
         in this function call.
 
@@ -115,16 +116,16 @@ def blk_qb_1(inner_num_pass, overwrite_A, A, blk, tol, max_rank, gen):
     block of the QB factorization. We stabilize subspace iteration with
     QR factorization at each step.
     """
-    gen = np.random.default_rng(gen)
+    rng = np.random.default_rng(rng)
     # Build the QB function
     rf = PowerRangeFinder(inner_num_pass, 1, orth, gaussian_operator)
-    qb = BlockedQB1(rf, overwrite_A)
+    qb_ = BlockedQB1(rf, overwrite_A)
     # Call the QB function
-    Q, B = qb(A, blk, tol, max_rank, gen)
+    Q, B = qb_.exec(A, blk, tol, max_rank, rng)
     return Q, B
 
 
-def blk_qb_2(num_passes, A, blk, tol, max_rank, gen):
+def blk_qb_2(num_passes, A, blk, tol, max_rank, rng):
     """
     Iteratively build an approximate QB factorization of A,
     which terminates once either of the following conditions
@@ -159,7 +160,7 @@ def blk_qb_2(num_passes, A, blk, tol, max_rank, gen):
     tol : float
         Terminate if ||A - Q B||_Fro <= tol.
 
-    gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+    rng : Union[None, int, SeedSequence, BitGenerator, Generator]
         Determines the numpy Generator object that manages randomness
         in this function call.
 
@@ -179,12 +180,9 @@ def blk_qb_2(num_passes, A, blk, tol, max_rank, gen):
 
     We stabilize subspace iteration with a QR factorization at each step.
     """
-    gen = np.random.default_rng(gen)
-    # Build the QB function
+    rng = np.random.default_rng(rng)
     sk_op = PoweredSketchOp(num_passes, 1, orth, gaussian_operator)
-    qb_ = BlockedQB2(sk_op)
-    # Call the QB function
-    Q, B = qb_(A, blk, tol, max_rank, gen)
+    Q, B = BlockedQB2(sk_op).exec(A, blk, tol, max_rank, rng)
     return Q, B
 
 
@@ -198,14 +196,14 @@ class FRQB:
     def __init__(self, rf: FRRF):
         self.rangefinder = rf
 
-    def __call__(self, A, k, gen):
+    def exec(self, A, k, rng):
         """
         Return a rank-k approximation of A, represented by its
         factors in a QB decomposition. Construct the factor
         Q by calling this FRQB object's rangefinder.
         """
-        gen = np.random.default_rng(gen)
-        Q = self.rangefinder(A, k, gen)
+        rng = np.random.default_rng(rng)
+        Q = self.rangefinder.exec(A, k, rng)
         B = Q.T @ A
         return Q, B
 
@@ -214,9 +212,15 @@ class FRQB:
 #      Blocked QB: abstract base class, two implementations
 ###############################################################################
 
+# TODO: maybe move "blk" into attributes of BlockedQB objects, rather than
+#  the exec function? That would be in line with PoweredSketchOp, which has
+#  tuning parameters (affecting speed and accuracy) in attributes rather than
+#  exec. In that case the right name might be better as "adaptive QB" rather
+#  than "blocked" QB.
+
 class BaseBlockedQB:
 
-    def __call__(self, A, blk, tol, max_rank, gen):
+    def exec(self, A, blk, tol, max_rank, rng):
         """
         Iteratively build an approximate QB factorization of A:
             The matrix Q has orthonormal columns.
@@ -237,7 +241,7 @@ class BlockedQB1(BaseBlockedQB):
         self.rangefinder = rf
         self.overwrite_a = overwrite_a
 
-    def __call__(self, A, blk, tol, max_rank, gen):
+    def exec(self, A, blk, tol, max_rank, rng):
         """
         Iteratively build an approximate QB factorization of A,
         which terminates once either of the following conditions
@@ -269,7 +273,7 @@ class BlockedQB1(BaseBlockedQB):
         tol : float
             Terminate if ||A - Q B||_Fro <= tol.
 
-        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages randomness
             in this function call.
 
@@ -297,7 +301,7 @@ class BlockedQB1(BaseBlockedQB):
             a LinearOperator.
             """
             A = np.copy(A)
-        gen = np.random.default_rng(gen)
+        rng = np.random.default_rng(rng)
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
         sq_norm_A = la.norm(A, ord='fro') ** 2
@@ -307,7 +311,7 @@ class BlockedQB1(BaseBlockedQB):
                 blk = int(max_rank - B.shape[0])  # final block
             # Standard QB, but step in to make extra sure that
             #   the columns of "Qi" are orthogonal to cols of current "Q".
-            Qi = self.rangefinder(A, blk, gen)
+            Qi = self.rangefinder.exec(A, blk, rng)
             Qi = project_out(Qi, Q, as_list=False)
             Qi = la.qr(Qi, mode='economic')[0]
             Bi = Qi.T @ A
@@ -324,9 +328,9 @@ class BlockedQB1(BaseBlockedQB):
 class BlockedQB2(BaseBlockedQB):
 
     def __init__(self, sk_op: SORS):
-        self.sketching_matrix_generator = sk_op
+        self.sk_op = sk_op
 
-    def __call__(self, A, blk, tol, max_rank, gen):
+    def exec(self, A, blk, tol, max_rank, rng):
         """
         Iteratively build an approximate QB factorization of A,
         which terminates once either of the following conditions
@@ -336,7 +340,7 @@ class BlockedQB2(BaseBlockedQB):
             (2) Q has max_rank columns.
 
         We start by obtaining a sketching matrix of shape
-        (A.shape[1], max_rank) from this object's sketching_matrix_generator.
+        (A.shape[1], max_rank) from this object's sk_op.
         Then we perform two more passes over A before beginning
         iterative construction of (Q, B). Each iteration adds at
         most "blk" columns to Q and rows to B.
@@ -356,7 +360,7 @@ class BlockedQB2(BaseBlockedQB):
         tol : float
             Terminate if ||A - Q B||_Fro <= tol.
 
-        gen : Union[None, int, SeedSequence, BitGenerator, Generator]
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages randomness
             in this function call.
 
@@ -380,8 +384,10 @@ class BlockedQB2(BaseBlockedQB):
         if tol < np.inf:
             sq_norm_A = la.norm(A, ord='fro') ** 2
             sq_tol = tol**2
-        gen = np.random.default_rng(gen)
-        S = self.sketching_matrix_generator(A, blk, gen)
+        rng = np.random.default_rng(rng)
+        S = self.sk_op.exec(A, blk, rng)
+        if not isinstance(S, np.ndarray):
+            raise RuntimeError()
         G = A @ S
         H = A.T @ G
         for i in range(int(np.ceil(max_rank/blk))):
