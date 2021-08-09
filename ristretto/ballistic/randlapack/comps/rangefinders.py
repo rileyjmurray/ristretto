@@ -9,16 +9,12 @@ Routines for the orthogonal rangefinder problem:
 """
 import numpy as np
 import scipy.linalg as la
+import ristretto.ballistic.randlapack.utilities as util
 from ristretto.ballistic.rblas.sketching import gaussian_operator
 from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
 
 
-def orth(S):
-    return la.qr(S, mode='economic')[0]
-
-
 class RangeFinder:
-    """rangefinder"""
 
     def exec(self, A, k, tol, eager, rng):
         """
@@ -78,7 +74,7 @@ def power_rangefinder(A, k, num_pass,
     if sketch_op_gen is None:
         sketch_op_gen = gaussian_operator
     if stabilizer is None:
-        stabilizer = orth
+        stabilizer = util.orth
     rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
     Q = rf.exec(A, k, np.inf, True, rng)
     return Q
@@ -97,8 +93,7 @@ class RF1(RangeFinder):
         self.pps = pps
 
     def exec(self, A, k, tol, eager, rng):
-        if tol is not None and tol < np.inf:
-            raise ValueError()
+        util.fixed_rank_warning(eager, tol, early_stop_possible=False)
         rng = np.random.default_rng(rng)
         S = PoweredSketchOp(self.num_pass, self.pps,  self.stabilizer,
                             self.sketch_op_gen).exec(A, k, rng)

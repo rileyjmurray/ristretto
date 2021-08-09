@@ -1,11 +1,10 @@
-import warnings
-
 import numpy as np
 import scipy.linalg as la
 from ristretto.ballistic.rblas.sketching import gaussian_operator
 from ristretto.ballistic.randlapack.comps.rangefinders import RangeFinder,  \
     RF1
 from ristretto.ballistic.randlapack.comps.powering import SORS, PoweredSketchOp
+import ristretto.ballistic.randlapack.utilities as util
 
 
 ###############################################################################
@@ -51,7 +50,7 @@ def qb(num_passes, A, k, rng):
     stabilize subspace iteration by a QR factorization at every step.
     """
     rng = np.random.default_rng(rng)
-    rf = RF1(num_passes - 1, 1, orth, gaussian_operator)
+    rf = RF1(num_passes - 1, 1, util.orth, gaussian_operator)
     Q, B = QB1(rf).exec(A, k, np.inf, True, rng)
     return Q, B
 
@@ -116,7 +115,7 @@ def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
     QR factorization at each step.
     """
     rng = np.random.default_rng(rng)
-    rf = RF1(inner_num_pass, 1, orth, gaussian_operator)
+    rf = RF1(inner_num_pass, 1, util.orth, gaussian_operator)
     Q, B = QB2(rf, blk, overwrite_A).exec(A, max_rank, tol, True, rng)
     return Q, B
 
@@ -177,7 +176,7 @@ def qb_b_pe(num_passes, A, blk, tol, max_rank, rng):
     We stabilize subspace iteration with a QR factorization at each step.
     """
     rng = np.random.default_rng(rng)
-    sk_op = PoweredSketchOp(num_passes, 1, orth, gaussian_operator)
+    sk_op = PoweredSketchOp(num_passes, 1, util.orth, gaussian_operator)
     Q, B = QB3(sk_op, blk).exec(A, max_rank, tol, True, rng)
     return Q, B
 
@@ -277,13 +276,7 @@ class QB3(QBFactorizer):
     def exec(self, A, k, tol, eager, rng):
         assert k <= A.shape[0]
         assert tol > 0
-        if not eager and tol < np.inf:
-            msg = """
-            This implementation can only control error tolerance as a means 
-            of early termination. No guarantee can be made that we will come 
-            close to the requested tolerance.
-            """
-            warnings.warn(msg)
+        util.fixed_rank_warning(eager, tol, early_stop_possible=True)
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
         if tol < np.inf:
@@ -325,10 +318,6 @@ class QB3(QBFactorizer):
 ###############################################################################
 #      Helper functions
 ###############################################################################
-
-
-def orth(S):
-    return la.qr(S, mode='economic')
 
 
 def project_out(Qi, Q, as_list=False):

@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as la
+import ristretto.ballistic.randlapack.utilities as util
 import ristretto.ballistic.randlapack.comps.qb as rist_qb
 import ristretto.ballistic.randlapack.comps.powering as rist_pow
 
@@ -108,6 +109,7 @@ class LU2(LUDecomposer):
         self.lstsq = lstsq
 
     def exec(self, A, k, tol, over, eager, rng):
+        util.fixed_rank_warning(eager, tol, early_stop_possible=False)
         # TODO: this implementation is a total mess of transposes.
         #  They're here because SciPy's LU returns factors as
         #  A = P L U, while this algorithm is drawn from a paper
