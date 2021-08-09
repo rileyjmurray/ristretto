@@ -17,24 +17,30 @@ def orth(S):
     return la.qr(S, mode='economic')[0]
 
 
-class FRRF:
-    """Fixed rank rangefinder"""
+class RangeFinder:
+    """rangefinder"""
 
-    def exec(self, A, k, rng):
+    def exec(self, A, k, tol, eager, rng):
         """
-        Find a matrix Q that has k orthonormal columns where || A - Q Q' A ||
-        is "reasonably" close to the error || A - A_k || of the best rank-k
-        approximation of A. The range of Q serves as an approximation for the
-        the span of the top k left singular vectors of A.
+        Return a matrix Q with orthonormal columns, where Range(Q) is
+        "reasonably" closely aligned with the top dim(Range(Q)) left
+        singular vectors of A.
 
         Parameters
         ----------
         A : Union[ndarray, spmatrix, LinearOperator]
             Data matrix whose range is to be approximated.
-
         k : int
-            Number of columns in Q.
-
+            Target for the number of columns in Q.
+        tol : float
+            Target for the error || A - Q Q' A ||.
+        eager : bool
+            If True, then terminate as soon as soon as possible after Q has
+            k columns OR the error drops below tol. If False, then terminate
+            as soon as possible after Q has at least k columns AND the error
+            drops below tol. The meaning of the phrase "as soon as possible"
+            is implementation dependent. Different implementations might not
+            be able to control error tolerance and might ignore this argument.
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
@@ -73,12 +79,12 @@ def power_rangefinder(A, k, num_pass,
         sketch_op_gen = gaussian_operator
     if stabilizer is None:
         stabilizer = orth
-    rf = PowerRangeFinder(num_pass, pps, stabilizer, sketch_op_gen)
-    Q = rf.exec(A, k, rng)
+    rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
+    Q = rf.exec(A, k, np.inf, True, rng)
     return Q
 
 
-class PowerRangeFinder(FRRF):
+class RF1(RangeFinder):
 
     def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
         if sketch_op_gen is None:
@@ -90,7 +96,9 @@ class PowerRangeFinder(FRRF):
         self.stabilizer = stabilizer
         self.pps = pps
 
-    def exec(self, A, k, rng):
+    def exec(self, A, k, tol, eager, rng):
+        if tol is not None and tol < np.inf:
+            raise ValueError()
         rng = np.random.default_rng(rng)
         S = PoweredSketchOp(self.num_pass, self.pps,  self.stabilizer,
                             self.sketch_op_gen).exec(A, k, rng)

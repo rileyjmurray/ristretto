@@ -89,7 +89,7 @@ class PoweredSketchOp(SORS):
     """
 
     def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
-        # These are the same arguments as PowerRangeFinder
+        # These are the same arguments as RF1
         self.num_pass = num_pass
         self.pps = pps
         self.stabilizer = stabilizer

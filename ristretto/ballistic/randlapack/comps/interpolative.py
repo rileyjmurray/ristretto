@@ -10,14 +10,18 @@ against LinearOperator objects. They branch on "dense or LinearOperator?" at
 the top-level of a given user-facing function. 
 """
 
+#TODO: go through the functions here and have them accept "k" and
+#   "tol" as target rank and target tolerance respectively. Need to
+#   reconsider if "over" should be an argument to __init__ or exec.
+
 
 class BaseFRID:
     """Fixed rank ID (row or column)"""
 
-    def exec(self, A, k, p, axis, gen):
+    def exec(self, A, k, over, axis, gen):
         """
         Run a rank-k RowID (axis=0) or ColumnID (axis=1) on A,
-        using oversampling parameter p.
+        using oversampling parameter over.
 
         A RowID consists of a matrix "X" and a length-k index vector "Is" so
         that A \approx X @ A[Is,:]. The rows of X must contain a
@@ -36,15 +40,15 @@ class FRID1(BaseFRID):
     def __init__(self, sk_op: SORS):
         self.sk_op = sk_op
 
-    def exec(self, A, k, p, axis, rng):
+    def exec(self, A, k, over, axis, rng):
         rng = np.random.default_rng(rng)
         if axis == 0:
-            Sk = self.sk_op.exec(A, k + p, rng)
+            Sk = self.sk_op.exec(A, k + over, rng)
             Y = A @ Sk
             X, Is = deterministic_cpqr_row_id(Y, k)
             return X, Is
         elif axis == 1:
-            Sk = self.sk_op.exec(A.T, k + p, rng).T
+            Sk = self.sk_op.exec(A.T, k + over, rng).T
             Y = Sk @ A
             Z, Js = deterministic_cpqr_col_id(Y, k)
             return Z, Js
@@ -59,10 +63,10 @@ class FRID2(BaseFRID):
         self.sk_op = sk_op
         self.lstsq = lstsq
 
-    def exec(self, A, k, p, axis, rng):
+    def exec(self, A, k, over, axis, rng):
         rng = np.random.default_rng(rng)
         if axis == 0:
-            Sk = self.sk_op.exec(A, k + p, rng)
+            Sk = self.sk_op.exec(A, k + over, rng)
             Y = A @ Sk
             _, _, I = la.qr(Y.T, mode='economic', pivoting=True)
             Is = I[:k]
@@ -70,7 +74,7 @@ class FRID2(BaseFRID):
             X = res[0].T  # X = A @ pinv(A[Is, :])
             return X, Is
         elif axis == 1:
-            Sk = self.sk_op.exec(A.T, k + p, rng).T
+            Sk = self.sk_op.exec(A.T, k + over, rng).T
             Y = Sk @ A
             _, _, J = la.qr(Y, mode='economic', pivoting=True)
             Js = J[:k]
@@ -84,7 +88,7 @@ class FRID2(BaseFRID):
 class BaseFRDID:
     """Fixed rank Double ID"""
 
-    def exec(self, A, k, p, rng):
+    def exec(self, A, k, over, rng):
         """
         Return (X, Is, Z, Js) where
             X is A.shape[0]-by-k,
@@ -94,7 +98,7 @@ class BaseFRDID:
         so that
             A \approx X @ A[Is, Js] @ Z.
 
-        Use oversampling parameter "p" in the sketching step.
+        Use oversampling parameter "over" in the sketching step.
         """
         raise NotImplementedError()
 
@@ -105,10 +109,10 @@ class FRDID1(BaseFRDID):
     def __init__(self,  sk_op: SORS):
         self.sk_op = sk_op
 
-    def exec(self, A, k, p, rng):
+    def exec(self, A, k, over, rng):
         rng = np.random.default_rng(rng)
         #TODO: start with col ID if A.shape[0] > A.shape[1]
-        Sk = self.sk_op.exec(A, k + p, rng)
+        Sk = self.sk_op.exec(A, k + over, rng)
         Y = A @ Sk
         X, Is = deterministic_cpqr_row_id(Y, k)
         A = A[Is, :]
