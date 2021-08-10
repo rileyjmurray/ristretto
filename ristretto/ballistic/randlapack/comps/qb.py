@@ -197,7 +197,7 @@ class QBFactorizer:
             Data matrix to be approximated.
 
         k : int
-            Target for the number of columns in Q: 0 < k < min(A.shape).
+            Target for the number of columns in Q: 0 < k <= min(A.shape).
             Typically, k << min(A.shape). Conformant implementations ensure
             Q has at most k columns. For certain implementations it's
             reasonable to choose k as large as k = min(A.shape), in which
