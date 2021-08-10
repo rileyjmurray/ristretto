@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
@@ -7,7 +8,7 @@ import ristretto.ballistic.randlapack.comps.powering as rist_pow
 
 class LUDecomposer:
 
-    def exec(self, A, k, tol, over, eager, rng):
+    def exec(self, A, k, tol, over, rng):
         """
         Let A be m-by-n. For some integer ell <= k, return
             Pl: an m-by-m permutation matrix,
@@ -20,27 +21,39 @@ class LUDecomposer:
         Parameters
         ----------
         A : Union[ndarray, spmatrix, LinearOperator]
-            Data matrix to approximate
+            Data matrix to approximate.
+
         k : int
-            The returned LU decomposition will have rank at most k.
+            The returned LU decomposition will have rank at most k:
+            0 < k <= min(A.shape). Setting k=min(A.shape) and over=0
+            ensures ||A - Pl @ L @ U @ Pu|| <= tol on exit. However,
+            setting k=min(A.shape) may trivially return a full LU decomposition
+            of A in some implementations.
+
         tol : float
             The target error used by the randomized part of the algorithm.
-            When over = 0, this parameter controls ||A - Pl @ L @ U @ Pu||.
-            The precise meaning of "tol" when over > 0 is implementation
-            dependent.
+            When over = 0, this parameter is a desired bound on
+            ||A - Pl @ L @ U @ Pu||. The precise meaning of "tol" when over
+            > 0 is implementation dependent.
+
+            Some LU implementations have no direct control over approximation
+            error. Those implementations should raise a warning if tol > 0.
+            The rationale for this behavior is that setting tol > 0 indicates
+            an intention on the user's part that approximation error play a
+            role in the stopping criteria.
+
         over : int
-            The target rank used by the randomized part of the algorithm
-            will be "k + over". To avoid undesired truncation, set over=0
-            and increase the value of k. E.g., a configuration with over=5
-            and k=20 can avoid truncation by setting k=25 and over=0.
-        eager: bool
-            If True, then implementations should return as soon as possible
-            after either the target rank OR the target error are achieved.
-            If False, then implementations should return as soon as possible
-            after we reach BOTH the target rank AND the target error.
-            The meaning of the phrase "as soon as possible" is implementation
-            dependent. Different implementations might not be able to control
-            error tolerance and might ignore this argument.
+            The randomized part of the algorithm uses k+over as the target rank;
+            we require over >= 0 and k+over <= min(A.shape).
+            In a conformant implementation, that part of the algorithm will
+            never return a factorization of rank greater than k+over.
+
+            Setting over > 0 will likely result in truncating the the LU
+            factorization obtained in the randomized part of the algorithm.
+            You can avoid undesired truncation by setting over=0 and
+            increasing the value of k. E.g., a function call with over=5 and
+            k=20 can avoid truncation by setting k=25 and over=0.
+
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages randomness
             in this function call.
@@ -53,15 +66,17 @@ class LU1(LUDecomposer):
     def __init__(self, qb: rist_qb.QBFactorizer):
         self.qb = qb
 
-    def exec(self, A, k, tol, over, eager, rng):
+    def exec(self, A, k, tol, over, rng):
         """
+        TODO: describe algorithm and document parameters. Comment
+         that there's a very long note about how the parameter "over"
+         is handled.
 
         Notes
         -----
         This implementation draws from ZM2020's Algorithm 3.1.
-        When over > 0 (or "tol" is small and eager=False), we have to
-        truncate an intermediate factorization. Our truncation approach
-        is different from that of ZM2020 Algorithm 3.1.
+        When over > 0, we have to truncate an intermediate factorization.
+        Our truncation approach is different from that of ZM2020 Algorithm 3.1.
 
         Specifically, ZM2020 implements truncation by taking the leading
         k columns from Q after a QB decomposition. (ZM2020 doesn't use
@@ -84,8 +99,11 @@ class LU1(LUDecomposer):
         theoretical justification for this truncation strategy in the
         larger context of this algorithm.
         """
+        assert k > 0
+        assert k <= min(A.shape)
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
-        Q, B = self.qb.exec(A, k, tol, eager, rng)
+        Q, B = self.qb.exec(A, k + over, tol, rng)
         # ^ We have A \approx Q B
         P1, L1, U1 = la.lu(B.T)
         # ^ We have B = U1.T @ L1.T @ P1.T
@@ -108,8 +126,18 @@ class LU2(LUDecomposer):
         self.sk_op = sk_op
         self.lstsq = lstsq
 
-    def exec(self, A, k, tol, over, eager, rng):
-        util.fixed_rank_warning(eager, tol, early_stop_possible=False)
+    def exec(self, A, k, tol, over, rng):
+        #TODO: describe algorithm and document parameters.
+        #   Explain that this algorithm has no control over tol.
+        assert k > 0
+        assert k <= min(A.shape)
+        assert tol < np.inf
+        if tol > 0:
+            msg = """
+            This LU implementation cannot directly control
+            approximation error. Parameter "tol" is being ignored.
+            """
+            warnings.warn(msg)
         rng = np.random.default_rng(rng)
         S = self.sk_op.exec(A, k + over, rng)
         Y = A @ S
@@ -127,4 +155,3 @@ class LU2(LUDecomposer):
         U = Uz
         # ^ Py @ A @ Pz \approx L @ U
         return Py.T, L, U, Pz.T
-

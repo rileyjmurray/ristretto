@@ -35,9 +35,9 @@ def sketch_and_precond(A, b, S, tol, iter_lim, method='qr'):
         U, sigma, Vh = la.svd(A_ske, overwrite_a=True, check_finite=False, full_matrices=False)
         rank = np.count_nonzero(sigma > sigma[0] * np.min(A.shape) * np.finfo(float).eps)
         N = Vh[:rank, :].T / sigma[:rank]
-        #TODO: compute the solution to (A_ske' A_ske) x_ske = A_ske' bske using the SVD, then update
-        #   b = b - A x_ske, then run preconditioned LSQR to get x, and finally
-        #   update x += x_ske.
+        #TODO: solve (A_ske' A_ske) x_ske = A_ske' b_ske using the SVD,
+        #   then update b = b - A x_ske, then run preconditioned LSQR to get
+        #   x, and finally update x += x_ske.
         res = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
         return res
     else:

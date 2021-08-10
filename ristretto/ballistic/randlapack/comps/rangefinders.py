@@ -7,6 +7,7 @@ Routines for the orthogonal rangefinder problem:
     This problem can be considered where k is given or when a tolerance "tol"
     is given and we require || A - Q Q' A ||_2 <= tol.
 """
+import warnings
 import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
@@ -40,13 +41,17 @@ def power_rangefinder(A, k, num_pass,
     if stabilizer is None:
         stabilizer = util.orth
     rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
-    Q = rf.exec(A, k, 0.0, True, rng)
+    Q = rf.exec(A, k, 0.0, rng)
     return Q
+
+###############################################################################
+#       Object oriented interfaces
+###############################################################################
 
 
 class RangeFinder:
 
-    def exec(self, A, k, tol, eager, rng):
+    def exec(self, A, k, tol, rng):
         """
         Return a matrix Q with orthonormal columns, where Range(Q) is
         "reasonably" closely aligned with the top dim(Range(Q)) left
@@ -56,17 +61,28 @@ class RangeFinder:
         ----------
         A : Union[ndarray, spmatrix, LinearOperator]
             Data matrix whose range is to be approximated.
+
         k : int
-            Target for the number of columns in Q.
+            Target for the number of columns in Q: 0 < k <= min(A.shape).
+            Typically, k << min(A.shape). Conformant implementations ensure
+            Q has at most k columns. For certain implementations it's
+            reasonable to choose k as large as k = min(A.shape), in which
+            case the implementation returns only once a specified error
+            tolerance has been met.
+
         tol : float
-            Target for the error || A - Q Q' A ||.
-        eager : bool
-            If True, then terminate as soon as soon as possible after Q has
-            k columns OR the error drops below tol. If False, then terminate
-            as soon as possible after Q has at least k columns AND the error
-            drops below tol. The meaning of the phrase "as soon as possible"
-            is implementation dependent. Different implementations might not
-            be able to control error tolerance and might ignore this argument.
+            Target for the error  ||A - Q Q' A||: 0 <= tol < np.inf. Only
+            certain implementations are able to control approximation error.
+            Those implementations may return a matrix Q with fewer than k
+            columns if ||A - Q Q' A|| <= tol. Assuming k < rank(A) and that the
+            implementation can compute ||A - Q Q' A|| accurately, setting
+            tol=0 means the implementation will return Q with exactly k columns.
+
+            Implementations that cannot control error should raise a warning
+            if tol > 0. The rationale for this behavior is that setting
+            tol > 0 indicates an intention on the user's part that approximation
+            error play a role in the stopping criteria.
+
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
@@ -90,14 +106,22 @@ class RF1(RangeFinder):
         if sketch_op_gen is None:
             sketch_op_gen = gaussian_operator
         if stabilizer is None:
-            stabilizer = orth
+            stabilizer = util.orth
         self.num_pass = num_pass
         self.sketch_op_gen = sketch_op_gen
         self.stabilizer = stabilizer
         self.pps = pps
 
-    def exec(self, A, k, tol, eager, rng):
-        util.fixed_rank_warning(eager, tol, early_stop_possible=False)
+    def exec(self, A, k, tol, rng):
+        assert k > 0
+        assert k <= min(A.shape)
+        assert tol < np.inf
+        if tol > 0:
+            msg = """
+            This RangeFinder implementation cannot directly control
+            approximation error. Parameter "tol" is being ignored.
+            """
+            warnings.warn(msg)
         rng = np.random.default_rng(rng)
         S = PoweredSketchOp(self.num_pass, self.pps,  self.stabilizer,
                             self.sketch_op_gen).exec(A, k, rng)

@@ -27,10 +27,10 @@ def qb(num_passes, A, k, rng):
         Data matrix to approximate.
 
     k : int
-        Target rank for the approximation of A. Includes any oversampling.
-        (E.g., if you want to be near the optimal (Eckhart-Young) error
-        for a rank 20 approximation of A, then you might want to set k=25.)
-        We require k <= min(A.shape).
+        Target rank for the approximation of A: 0 < k < min(A.shape).
+        This parameter includes any oversampling. For example, if you
+        want to be near the optimal (Eckhart-Young) error for a rank 20
+        approximation of A, then you might want to set k=25.
 
     rng : Union[None, int, SeedSequence, BitGenerator, Generator]
         Determines the numpy Generator object that manages randomness
@@ -51,7 +51,7 @@ def qb(num_passes, A, k, rng):
     """
     rng = np.random.default_rng(rng)
     rf = RF1(num_passes - 1, 1, util.orth, gaussian_operator)
-    Q, B = QB1(rf).exec(A, k, np.inf, True, rng)
+    Q, B = QB1(rf).exec(A, k, 0, rng)
     return Q, B
 
 
@@ -65,9 +65,7 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
         (2) Q has k columns.
 
     Each iteration involves sketching A from the right by a sketching
-    matrix with "blk" columns. The sketching matrix is constructed by
-    applying (inner_num_pass - 2) steps of subspace iteration to a
-    Gaussian matrix with blk columns.
+    matrix with "blk" columns, and reading through A inner_num_pass times.
 
     Parameters
     ----------
@@ -87,10 +85,12 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
         Data matrix to approximate.
 
     k : int
-        Terminate if Q.shape[1] == k.
+        Terminate if Q.shape[1] == k. Assuming k < rank(A), setting tol=0 is a
+        valid way of ensuring Q.shape[1] == k on exit.
 
     tol : float
-        Terminate if ||A - Q B||_Fro <= tol.
+        Terminate if ||A - Q B||_Fro <= tol. Setting k = min(A.shape) is a
+        valid way of ensuring ||A - Q B||_Fro <= tol on exit.
 
     rng : Union[None, int, SeedSequence, BitGenerator, Generator]
         Determines the numpy Generator object that manages randomness
@@ -116,7 +116,7 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
     """
     rng = np.random.default_rng(rng)
     rf = RF1(inner_num_pass, 1, util.orth, gaussian_operator)
-    Q, B = QB2(rf, blk, overwrite_A).exec(A, k, tol, True, rng)
+    Q, B = QB2(rf, blk, overwrite_A).exec(A, k, tol, rng)
     return Q, B
 
 
@@ -176,7 +176,7 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
     """
     rng = np.random.default_rng(rng)
     sk_op = PoweredSketchOp(num_passes, 1, util.orth, gaussian_operator)
-    Q, B = QB3(sk_op, blk).exec(A, k, tol, True, rng)
+    Q, B = QB3(sk_op, blk).exec(A, k, tol, rng)
     return Q, B
 
 
@@ -186,7 +186,7 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
 
 class QBFactorizer:
 
-    def exec(self, A, k, tol, eager, rng):
+    def exec(self, A, k, tol, rng):
         """
         Return a matrix Q with orthonormal columns and a matrix B where
         the product Q B stands in as an approximation of A.
@@ -197,22 +197,32 @@ class QBFactorizer:
             Data matrix to be approximated.
 
         k : int
-            Target for the number of columns in Q. Must be <= A.shape[0].
+            Target for the number of columns in Q: 0 < k < min(A.shape).
+            Typically, k << min(A.shape). Conformant implementations ensure
+            Q has at most k columns. For certain implementations it's
+            reasonable to choose k as large as k = min(A.shape), in which
+            case the implementation returns only once a specified error
+            tolerance has been met.
 
         tol : float
-            Target for the error || A - Q B ||. Must be > 0.
-
-        eager : bool
-            If True, then terminate as soon as soon as possible after Q has
-            k columns OR the error drops below tol. If False, then terminate
-            as soon as possible after Q has at least k columns AND the error
-            drops below tol. The meaning of the phrase "as soon as possible"
-            is implementation dependent. Different implementations might not
-            be able to control error tolerance and might ignore this argument.
+            Target for the error  ||A - Q B||: 0 <= tol < np.inf. Only
+            certain implementations are able to control approximation error.
+            Those implementations may return a matrix Q with fewer than k
+            columns if ||A - Q B|| <= tol. Assuming k < rank(A) and that the
+            implementation can compute ||A - Q B|| accurately, setting
+            tol=0 means the implementation will return Q, B with exact rank k.
 
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Has the same number of rows as A, and orthonormal columns.
+
+        B : ndarray
+            B = Q.T @ A (although not necessarily computed in the way).
         """
         raise NotImplementedError()
 
@@ -222,7 +232,7 @@ class QB1(QBFactorizer):
     def __init__(self, rf: RangeFinder):
         self.rangefinder = rf
 
-    def exec(self, A, k, tol, eager, rng):
+    def exec(self, A, k, tol, rng):
         """
         Rely on a rangefinder to obtain the matrix Q for the decomposition
         A \approx Q B. Once we have Q, we construct B = Q.T @ A and return
@@ -238,22 +248,14 @@ class QB1(QBFactorizer):
             Data matrix to approximate.
 
         k : int
-            Target rank for Q, passed directly to the rangefinder.
-            We require k <= min(A.shape).
+            Target for the number of columns in Q: 0 < k <= min(A.shape).
+            This parameter is passed directly to the rangefinder.
 
         tol : float
-            Target error tolerance ||A - Q B||. Passed to the rangefinder
-            as a target error tolerance for ||A - Q Q' A||. We require tol > 0.
-
-        eager :
-            A flag used to signal preferred termination criteria for the
-            rangefinder. If True, then terminate as soon as possible once
-            Q.shape[1] >= k OR ||A - Q B|| <= tol. If False, then terminate
-            as soon as possible after Q.shape[1] >= k AND ||A - Q B|| <= tol.
-            The precise meaning of "as soon as possible" is dependent on the
-            implementation of the rangefinder. Some rangefinders have no
-            control over error tolerance. If implemented properly, those
-            rangefinders should raise warnings if eager=False and tol < np.inf.
+            Target for the error ||A - Q B||: 0 <= tol < np.inf.
+            This parameter is passed directly to the rangefinder.
+            Note that since we construct B := Q.T @ A, we have
+            ||A - Q B|| = ||A  - Q Q' A||.
 
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
@@ -267,8 +269,11 @@ class QB1(QBFactorizer):
         B : ndarray
             Equal to Q.T @ A.
         """
+        assert k > 0
+        assert k <= min(A.shape)
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
-        Q = self.rangefinder.exec(A, k, tol, eager, rng)
+        Q = self.rangefinder.exec(A, k, tol, rng)
         B = Q.T @ A
         return Q, B
 
@@ -280,23 +285,26 @@ class QB2(QBFactorizer):
         self.blk = blk
         self.overwrite_a = overwrite_a
 
-    def exec(self, A, k, tol, eager, rng):
+    def exec(self, A, k, tol, rng):
         """
         Build a QB factorization by iteratively adding columns to Q
         and rows to B. The algorithm modifies A in-place. If
         self.overwrite_a = False, then a copy of A is made at the start
-        of this function call. The algorithm initializes Q, B as empty
-        matrices and proceeds roughly as follows:
+        of this function call. We start by initializing Q, B with shapes
+        (A.shape[0], 0) and (0, A.shape[1]), and we roughly proceed as follows
 
             cur_blk = min(k - Q.shape[1], self.blk)
-            Qi = rangefinder(A, cur_blk, np.inf, True, rng)
+            if cur_blk == 0 or ||A||_Fro <= tol:
+                return Q, B
+            Qi = rangefinder(A, cur_blk, 0.0, rng)
             Bi = Qi.T @ A
             Q = np.column_stack((Q, Qi))
             B = np.row_stack((B, Bi))
             A -= Qi @ Bi
 
-        Termination criteria are controlled by (k, tol, eager), as discussed
-        below.
+        This function differs from the code above in how it stabilizes
+        certain computations and avoids recomputing the Frobenius norm
+        of A at each iteration.
 
         Parameters
         ----------
@@ -304,20 +312,16 @@ class QB2(QBFactorizer):
             Data matrix to approximate.
 
         k : int
-            Target for the number of columns in Q. If eager=True, then Q will
-            have at most k columns. If eager=True and tol=np.inf, then
+            Target for the number of columns in Q: 0 < k <= min(A.shape).
+            If Q has k columns, then return (Q, B). Assuming k < rank(A),
+            setting tol=0 is a valid way of ensuring that Q has k columns
+            on exit.
 
         tol : float
-            Target error tolerance ||A - Q B||.
-
-        eager :
-            If True, then terminate as soon as possible once Q.shape[1] == k
-            OR ||A - Q B|| <= tol. If False, then terminate as soon as
-            possible after Q.shape[1] >= k AND ||A - Q B|| <= tol.
-            The precise meaning of "as soon as possible" is dependent on the
-            implementation of the rangefinder. Some rangefinders have no
-            control over error tolerance. If implemented properly, those
-            rangefinders should raise warnings if eager=False and tol < np.inf.
+            Target for the error ||A - Q B||_Fro: 0 <= tol < np.inf.
+            If ||A - Q B||_Fro <= tol, then return (Q, B). Setting
+            k = min(A.shape) is a valid way of ensuring ||A - Q B||_Fro <= tol
+            on exit.
 
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
@@ -329,12 +333,13 @@ class QB2(QBFactorizer):
             Output of the underlying rangefinder.
 
         B : ndarray
-            Equal to Q.T @ A.
+            Equal to Q.T @ A (although not computed in that way).
         """
         if not self.overwrite_a:
             A = np.copy(A)
-        assert k <= A.shape[0]
-        assert tol > 0
+        assert k > 0
+        assert k <= min(A.shape)
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
@@ -342,11 +347,11 @@ class QB2(QBFactorizer):
         sq_tol = tol ** 2
         blk = self.blk
         while True:
-            if eager and (B.shape[0] + blk > k):
-                blk = int(k - B.shape[0])  # final block
+            if B.shape[0] + blk > k:
+                blk = k - B.shape[0]  # final block
             # Standard QB, but step in to make extra sure that
             #   the columns of "Qi" are orthogonal to cols of current "Q".
-            Qi = self.rangefinder.exec(A, blk, np.inf, True, rng)
+            Qi = self.rangefinder.exec(A, blk, 0.0, rng)
             Qi = project_out(Qi, Q, as_list=False)
             Qi = la.qr(Qi, mode='economic')[0]
             Bi = Qi.T @ A
@@ -357,9 +362,7 @@ class QB2(QBFactorizer):
             sq_norm_A = sq_norm_A - la.norm(Bi, ord='fro') ** 2
             tol_ok = sq_norm_A <= sq_tol
             size_ok = B.shape[0] >= k
-            if eager and (tol_ok or size_ok):
-                break
-            elif tol_ok and size_ok:
+            if tol_ok or size_ok:
                 break
         return Q, B
 
@@ -370,10 +373,56 @@ class QB3(QBFactorizer):
         self.sk_op = sk_op
         self.blk = blk
 
-    def exec(self, A, k, tol, eager, rng):
-        assert k <= A.shape[0]
-        assert tol > 0
-        util.fixed_rank_warning(eager, tol, early_stop_possible=True)
+    def exec(self, A, k, tol, rng):
+        """
+        Build a QB factorization of A by constructing a suitable sketching
+        operator S with S.shape = (A.shape[1], k) and then constructing
+        G = A @ S and H = A.T @ G. Once (G, H, S) are in hand, we process these
+        matrices in blocks of size "self.blk" at a time (except in the last
+        iteration, where we might process a smaller block). While processing
+        the blocks we monitor tolerance-based early stopping criteria.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix to approximate.
+
+        k : int
+            Target for the number of columns in Q: 0 < k < min(A.shape).
+            If Q has k columns, then return (Q, B). Assuming k < rank(A),
+            setting tol=0 is a valid way of ensuring that Q has k columns
+            on exit. Note that this implementation requires strict
+            inequality k < min(A.shape).
+
+        tol : float
+            Target for the error ||A - Q B||_Fro: 0 <= tol < np.inf.
+            If ||A - Q B||_Fro <= tol, then return (Q, B). There is
+            no way of ensuring that ||A - Q B||_Fro <= tol holds on
+            exit. Setting tol=0 skips the computations that are typically
+            necessary for monitoring early-stopping.
+
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Output of the underlying rangefinder.
+
+        B : ndarray
+            Equal to Q.T @ A (although not computed in that way).
+
+        Notes
+        -----
+        With its current implementation, this function requires
+        self.num_passes + 1 passes over A. An efficient implementation
+        using two-in-one sketching could run this algorithm using only
+        self.num_passes passes over A.
+        """
+        assert k > 0
+        assert k < min(A.shape)
+        assert tol < np.inf
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
         if tol < np.inf:
@@ -405,7 +454,7 @@ class QB3(QBFactorizer):
             la.solve_triangular(Ri, Bi, trans='T', overwrite_b=True)
             Q = np.column_stack((Q, Qi))
             B = np.row_stack((B, Bi))
-            if eager and tol < np.inf:
+            if tol > 0:
                 sq_norm_A = sq_norm_A - la.norm(Bi, ord='fro')**2
                 if sq_norm_A <= sq_tol:
                     break  # early stopping

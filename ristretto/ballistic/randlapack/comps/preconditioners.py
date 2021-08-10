@@ -15,11 +15,11 @@ def sketch_and_factor(S, A, compute_Q=True):
     # don't arise as part of least-squares problems. There's also a potential performance
     # benefit to skipping computation of Q if we're happy initializing CG/LSQR at the
     # origin in sketch-and-precondition.
-    Aske = S @ A
+    A_ske = S @ A
     if compute_Q:
-        Q, R = sp.linalg.qr(Aske, mode='economic', pivoting=False)
+        Q, R = sp.linalg.qr(A_ske, mode='economic', pivoting=False)
     else:
-        R = sp.linalg.qr(Aske, mode='r', pivoting=False)
+        R = sp.linalg.qr(A_ske, mode='r', pivoting=False)
         Q = None
     return R, Q
 

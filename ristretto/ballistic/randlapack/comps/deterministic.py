@@ -102,7 +102,7 @@ def pinv_precond_lsqr(A, b, N, tol, iter_lim):
     A_precond = sparla.LinearOperator(shape=(A.shape[0], N.shape[1]),
                                       matvec=mv, rmatvec=rmv)
     result = sparla.lsqr(A_precond, b, atol=tol, btol=tol, iter_lim=iter_lim)
-    result[0] = N @ result[0]
+    result = (N @ result[0],) + result[1:]
     return result
 
 
