@@ -110,31 +110,21 @@ class LU2(LUDecomposer):
 
     def exec(self, A, k, tol, over, eager, rng):
         util.fixed_rank_warning(eager, tol, early_stop_possible=False)
-        # TODO: this implementation is a total mess of transposes.
-        #  They're here because SciPy's LU returns factors as
-        #  A = P L U, while this algorithm is drawn from a paper
-        #  that assumes LU factors as A P = L U.
         rng = np.random.default_rng(rng)
         S = self.sk_op.exec(A, k + over, rng)
         Y = A @ S
-        Py, Ly, Uy = la.lu(Y.T)
-        Ly, Uy = Uy.T, Ly.T
-        # ^ Y = Ly @ Uy @ Py.T; note that Uy isn't actually used.
+        Ly, Uy, Py = util.lupt(Y)  # Y @ Py = Ly @ Uy
         if over > 0:
             Ly = Ly[:, :k]
-        PyA = Py @ A
-        # ^ TODO: rewrite to use permutation vector instead of
-        #    dense multiplication. However, we probably want PyA
-        #    to have its own memory.
-        X = self.lstsq(Ly, PyA)
+        py = np.where(Py)[1]  # column indices
+        PyA = A[py, :]  # PyA = Py @ A
+        Z = self.lstsq(Ly, PyA)
         # ^ TODO: use the fact that Ly is lower-triangular. The best
         #    way to compute the pseudo-inverse might not involve least
         #    squares.
-        Px, Lx, Ux = la.lu(X.T)
-        Lx, Ux = Ux.T, Lx.T
-        # ^ X = Lx @ Ux @ Px.T
-        L = Ly @ Lx
-        U = Lx
-        # ^ Py @ A @ Px \approx L @ U
-        return Py.T, L, U, Px.T
+        Lz, Uz, Pz = util.lupt(Z)  # X @ Px = Lx @ Ux
+        L = Ly @ Lz
+        U = Uz
+        # ^ Py @ A @ Pz \approx L @ U
+        return Py.T, L, U, Pz.T
 

@@ -55,14 +55,14 @@ def qb(num_passes, A, k, rng):
     return Q, B
 
 
-def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
+def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
     """
     Iteratively build an approximate QB factorization of A,
     which terminates once either of the following conditions
     is satisfied
         (1)  || A - Q B ||_Fro <= tol
     or
-        (2) Q has max_rank columns.
+        (2) Q has k columns.
 
     Each iteration involves sketching A from the right by a sketching
     matrix with "blk" columns. The sketching matrix is constructed by
@@ -75,6 +75,10 @@ def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
         Number of passes over A in each iteration of this blocked QB
         algorithm. We require inner_num_pass >= 2.
 
+    blk : int
+        The block size in this blocked QB algorithm. Add this many columns
+        to Q at each iteration (except possibly the final iteration).
+
     overwrite_A : bool
         If True, then this method modifies A in-place. If False, then
         we start the algorithm by constructing a complete copy of A.
@@ -82,12 +86,8 @@ def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
     A : Union[ndarray, spmatrix, LinearOperator]
         Data matrix to approximate.
 
-    blk : int
-        The block size in this blocked QB algorithm. Add this many columns
-        to Q at each iteration (except possibly the final iteration).
-
-    max_rank : int
-        Terminate if Q.shape[1] == max_rank.
+    k : int
+        Terminate if Q.shape[1] == k.
 
     tol : float
         Terminate if ||A - Q B||_Fro <= tol.
@@ -107,8 +107,8 @@ def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
     Notes
     -----
     The number of columns in Q increase by "blk" at each iteration, unless
-    that would bring Q.shape[1] > max_rank. In that case, the final
-    iteration only adds enough columns to Q so that Q.shape[1] == max_rank.
+    that would bring Q.shape[1] > k. In that case, the final iteration only
+    adds enough columns to Q so that Q.shape[1] == k.
 
     We perform (inner_num_pass - 2) steps of subspace iteration for each
     block of the QB factorization. We stabilize subspace iteration with
@@ -116,25 +116,24 @@ def qb_b_fet(inner_num_pass, overwrite_A, A, blk, tol, max_rank, rng):
     """
     rng = np.random.default_rng(rng)
     rf = RF1(inner_num_pass, 1, util.orth, gaussian_operator)
-    Q, B = QB2(rf, blk, overwrite_A).exec(A, max_rank, tol, True, rng)
+    Q, B = QB2(rf, blk, overwrite_A).exec(A, k, tol, True, rng)
     return Q, B
 
 
-def qb_b_pe(num_passes, A, blk, tol, max_rank, rng):
+def qb_b_pe(num_passes, blk, A, k, tol, rng):
     """
     Iteratively build an approximate QB factorization of A,
     which terminates once either of the following conditions
     is satisfied
         (1)  || A - Q B ||_Fro <= tol
     or
-        (2) Q has max_rank columns.
+        (2) Q has k columns.
 
-    We start by obtaining a sketching matrix of shape
-    (A.shape[1], max_rank), using (num_passes - 1) steps of
-    subspace iteration on a random Gaussian matrix with
-    max_rank columns. Then we perform two more passes over A
-    before beginning iterative construction of (Q, B). Each
-    iteration adds at most "blk" columns to Q and rows to B.
+    We start by obtaining a sketching matrix of shape (A.shape[1], k),
+    using (num_passes - 1) steps of subspace iteration on a random Gaussian
+    matrix with k columns. Then we perform two more passes over A before
+    beginning iterative construction of (Q, B). Each iteration adds at most
+    "blk" columns to Q and rows to B.
 
     Parameters
     ----------
@@ -149,8 +148,8 @@ def qb_b_pe(num_passes, A, blk, tol, max_rank, rng):
         The block size in this blocked QB algorithm. Add this many
         columns to Q at each iteration (except possibly the final iteration).
 
-    max_rank : int
-        Terminate if Q.shape[1] == max_rank.
+    k : int
+        Terminate if Q.shape[1] == k.
 
     tol : float
         Terminate if ||A - Q B||_Fro <= tol.
@@ -177,7 +176,7 @@ def qb_b_pe(num_passes, A, blk, tol, max_rank, rng):
     """
     rng = np.random.default_rng(rng)
     sk_op = PoweredSketchOp(num_passes, 1, util.orth, gaussian_operator)
-    Q, B = QB3(sk_op, blk).exec(A, max_rank, tol, True, rng)
+    Q, B = QB3(sk_op, blk).exec(A, k, tol, True, rng)
     return Q, B
 
 
@@ -195,11 +194,14 @@ class QBFactorizer:
         Parameters
         ----------
         A : Union[ndarray, spmatrix, LinearOperator]
-            Data matrix whose range is to be approximated.
+            Data matrix to be approximated.
+
         k : int
             Target for the number of columns in Q. Must be <= A.shape[0].
+
         tol : float
             Target for the error || A - Q B ||. Must be > 0.
+
         eager : bool
             If True, then terminate as soon as soon as possible after Q has
             k columns OR the error drops below tol. If False, then terminate
@@ -207,6 +209,7 @@ class QBFactorizer:
             drops below tol. The meaning of the phrase "as soon as possible"
             is implementation dependent. Different implementations might not
             be able to control error tolerance and might ignore this argument.
+
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
             randomness in this function call.
@@ -220,6 +223,50 @@ class QB1(QBFactorizer):
         self.rangefinder = rf
 
     def exec(self, A, k, tol, eager, rng):
+        """
+        Rely on a rangefinder to obtain the matrix Q for the decomposition
+        A \approx Q B. Once we have Q, we construct B = Q.T @ A and return
+        (Q, B). This function is agnostic to the implementation of the
+        rangefinder: it might build a rank-k matrix Q all at once or construct
+        successively larger matrices Q by an iterative process. We make no
+        assumptions on the rangefinder's termination criteria beyond those
+        listed below.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix to approximate.
+
+        k : int
+            Target rank for Q, passed directly to the rangefinder.
+            We require k <= min(A.shape).
+
+        tol : float
+            Target error tolerance ||A - Q B||. Passed to the rangefinder
+            as a target error tolerance for ||A - Q Q' A||. We require tol > 0.
+
+        eager :
+            A flag used to signal preferred termination criteria for the
+            rangefinder. If True, then terminate as soon as possible once
+            Q.shape[1] >= k OR ||A - Q B|| <= tol. If False, then terminate
+            as soon as possible after Q.shape[1] >= k AND ||A - Q B|| <= tol.
+            The precise meaning of "as soon as possible" is dependent on the
+            implementation of the rangefinder. Some rangefinders have no
+            control over error tolerance. If implemented properly, those
+            rangefinders should raise warnings if eager=False and tol < np.inf.
+
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Output of the underlying rangefinder.
+
+        B : ndarray
+            Equal to Q.T @ A.
+        """
         rng = np.random.default_rng(rng)
         Q = self.rangefinder.exec(A, k, tol, eager, rng)
         B = Q.T @ A
@@ -234,6 +281,56 @@ class QB2(QBFactorizer):
         self.overwrite_a = overwrite_a
 
     def exec(self, A, k, tol, eager, rng):
+        """
+        Build a QB factorization by iteratively adding columns to Q
+        and rows to B. The algorithm modifies A in-place. If
+        self.overwrite_a = False, then a copy of A is made at the start
+        of this function call. The algorithm initializes Q, B as empty
+        matrices and proceeds roughly as follows:
+
+            cur_blk = min(k - Q.shape[1], self.blk)
+            Qi = rangefinder(A, cur_blk, np.inf, True, rng)
+            Bi = Qi.T @ A
+            Q = np.column_stack((Q, Qi))
+            B = np.row_stack((B, Bi))
+            A -= Qi @ Bi
+
+        Termination criteria are controlled by (k, tol, eager), as discussed
+        below.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix to approximate.
+
+        k : int
+            Target for the number of columns in Q. If eager=True, then Q will
+            have at most k columns. If eager=True and tol=np.inf, then
+
+        tol : float
+            Target error tolerance ||A - Q B||.
+
+        eager :
+            If True, then terminate as soon as possible once Q.shape[1] == k
+            OR ||A - Q B|| <= tol. If False, then terminate as soon as
+            possible after Q.shape[1] >= k AND ||A - Q B|| <= tol.
+            The precise meaning of "as soon as possible" is dependent on the
+            implementation of the rangefinder. Some rangefinders have no
+            control over error tolerance. If implemented properly, those
+            rangefinders should raise warnings if eager=False and tol < np.inf.
+
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Output of the underlying rangefinder.
+
+        B : ndarray
+            Equal to Q.T @ A.
+        """
         if not self.overwrite_a:
             A = np.copy(A)
         assert k <= A.shape[0]
@@ -249,7 +346,7 @@ class QB2(QBFactorizer):
                 blk = int(k - B.shape[0])  # final block
             # Standard QB, but step in to make extra sure that
             #   the columns of "Qi" are orthogonal to cols of current "Q".
-            Qi = self.rangefinder.exec(A, blk, np.inf, eager, rng)
+            Qi = self.rangefinder.exec(A, blk, np.inf, True, rng)
             Qi = project_out(Qi, Q, as_list=False)
             Qi = la.qr(Qi, mode='economic')[0]
             Bi = Qi.T @ A

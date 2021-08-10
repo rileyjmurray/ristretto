@@ -13,6 +13,36 @@ import ristretto.ballistic.randlapack.utilities as util
 from ristretto.ballistic.rblas.sketching import gaussian_operator
 from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
 
+###############################################################################
+#       Classic implementations, exposing fewest possible parameters.
+###############################################################################
+
+
+def power_rangefinder(A, k, num_pass,
+                      sketch_op_gen=None, rng=None,
+                      stabilizer=None, pps=1):
+    """
+    When building the matrix Q we are allowed to access A or A.T a total
+    of num_pass times. See the function "power_rangefinder_sketch_op" for the
+    meaning of the parameter "pps".
+
+    sketch_op_gen is a function handle that accepts two positive integer
+    arguments and one argument of various possible types (None, int,
+    np.random.SeedSequence, np.random.BitGenerator, np.random.Generator) to
+    control the random number generation process. The value
+        mat = sketch_op_gen(k1, k2, rng)
+    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided,
+    we define it so that it generates a matrix with iid standard normal entries.
+    """
+    rng = np.random.default_rng(rng)
+    if sketch_op_gen is None:
+        sketch_op_gen = gaussian_operator
+    if stabilizer is None:
+        stabilizer = util.orth
+    rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
+    Q = rf.exec(A, k, 0.0, True, rng)
+    return Q
+
 
 class RangeFinder:
 
@@ -52,32 +82,6 @@ class RangeFinder:
 
         """
         raise NotImplementedError()
-
-
-def power_rangefinder(A, k, num_pass,
-                      sketch_op_gen=None, rng=None,
-                      stabilizer=None, pps=1):
-    """
-    When building the matrix Q we are allowed to access A or A.T a total
-    of num_pass times. See the function "power_rangefinder_sketch_op" for the
-    meaning of the parameter "pps".
-
-    sketch_op_gen is a function handle that accepts two positive integer
-    arguments and one argument of various possible types (None, int,
-    np.random.SeedSequence, np.random.BitGenerator, np.random.Generator) to
-    control the random number generation process. The value
-        mat = sketch_op_gen(k1, k2, rng)
-    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided,
-    we define it so that it generates a matrix with iid standard normal entries.
-    """
-    rng = np.random.default_rng(rng)
-    if sketch_op_gen is None:
-        sketch_op_gen = gaussian_operator
-    if stabilizer is None:
-        stabilizer = util.orth
-    rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
-    Q = rf.exec(A, k, np.inf, True, rng)
-    return Q
 
 
 class RF1(RangeFinder):
