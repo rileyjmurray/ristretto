@@ -19,28 +19,39 @@ from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
 ###############################################################################
 
 
-def power_rangefinder(A, k, num_pass,
-                      sketch_op_gen=None, rng=None,
-                      stabilizer=None, pps=1):
+def power_rangefinder(A, k, num_pass, rng):
     """
-    When building the matrix Q we are allowed to access A or A.T a total
-    of num_pass times. See the function "power_rangefinder_sketch_op" for the
-    meaning of the parameter "pps".
+    Return a matrix Q with k orthonormal columns, where Range(Q) is
+    an approximation for the span of A's top k left singular vectors.
 
-    sketch_op_gen is a function handle that accepts two positive integer
-    arguments and one argument of various possible types (None, int,
-    np.random.SeedSequence, np.random.BitGenerator, np.random.Generator) to
-    control the random number generation process. The value
-        mat = sketch_op_gen(k1, k2, rng)
-    should be a k1-by-k2 numpy ndarray. If sketch_op_gen is not provided,
-    we define it so that it generates a matrix with iid standard normal entries.
+    This implementation uses a Gaussian sketching matrix with k columns
+    and requires a total of num_pass over A. We use QR to orthogonalize
+    the output of every matrix multiply that involves A or A'.
+
+    Parameters
+    ----------
+    A : Union[ndarray, spmatrix, LinearOperator]
+        Data matrix whose range is to be approximated.
+
+    k : int
+        Q.shape[1] == k. We require 0 < k <= min(A.shape).
+
+    num_pass : int
+        Total number of passes over A.
+
+    rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+        Determines the numpy Generator object that manages any and all
+        randomness in this function call.
+
+    Returns
+    -------
+    Q : ndarray
+        Q.shape = (A.shape[0], k) has orthonormal columns.
     """
+
     rng = np.random.default_rng(rng)
-    if sketch_op_gen is None:
-        sketch_op_gen = gaussian_operator
-    if stabilizer is None:
-        stabilizer = util.orth
-    rf = RF1(num_pass, pps, stabilizer, sketch_op_gen)
+    rf = RF1(num_pass, passes_per_stab=1, stabilizer=util.orth,
+             sketch_op_gen=gaussian_operator)
     Q = rf.exec(A, k, 0.0, rng)
     return Q
 
@@ -102,7 +113,7 @@ class RangeFinder:
 
 class RF1(RangeFinder):
 
-    def __init__(self, num_pass, pps, stabilizer, sketch_op_gen):
+    def __init__(self, num_pass, passes_per_stab, stabilizer, sketch_op_gen):
         if sketch_op_gen is None:
             sketch_op_gen = gaussian_operator
         if stabilizer is None:
@@ -110,9 +121,60 @@ class RF1(RangeFinder):
         self.num_pass = num_pass
         self.sketch_op_gen = sketch_op_gen
         self.stabilizer = stabilizer
-        self.pps = pps
+        self.passes_per_stab = passes_per_stab
 
     def exec(self, A, k, tol, rng):
+        """
+        Return a matrix Q with k orthonormal columns, where Range(Q) is
+        an approximation for the span of A's top k left singular vectors.
+
+        Suppose A is m-by-n. This implementation uses (self.num_pass - 1)
+        passes over A to construct a sketching matrix S of dimensions (n, k).
+        Once S is in hand, we form "Y = A S and" return the factor Q
+        from a QR decomposition of Y.
+
+        Here is how we would construct S in exact arithmetic:
+
+        if num_pass is odd
+            S = (A' A)^((self.num_pass-1)/2) self.sketch_op_gen(n, k, rng)
+        if num_pass is even
+            S = (A' A)^((self.num_pass-2)/2) A' self.sketch_op_gen(m, k, rng)
+
+        The actual matrix S matches the matrices above only up to its range.
+        The discrepancy is because forming the matrices above would result in
+        loss of precision from successive applications of (A, A'). We mitigate
+        this precision loss by the following procedure:
+
+        After "self.passes_per_stab" applications of A or A', we replace the
+        working matrix S (which might be of shape (n, k) or (m, k) at the time)
+        by S = self.stabilizer(S). An implementation of "self.stabilizer" is
+        valid as long as it returns a numerically well-behaved basis for the
+        range of its argument. The most common choice of self.stabilizer is
+        to return the factor Q from an (economic) QR factorization. An
+        alternative choice is to return the factor L from an LU decomposition.
+
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix whose range is to be approximated.
+
+        k : int
+            Q.shape[1] == k.
+
+        tol : float
+            Refer to the RangeFinder interface for the general meaning
+            of this parameter. This implementation checks if top < np.inf,
+            returns a warning if tol > 0, but otherwise ignores tol.
+
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Returns
+        -------
+        Q : ndarray
+            Q.shape = (A.shape[0], k) and has orthonormal columns.
+        """
         assert k > 0
         assert k <= min(A.shape)
         assert tol < np.inf
@@ -123,8 +185,8 @@ class RF1(RangeFinder):
             """
             warnings.warn(msg)
         rng = np.random.default_rng(rng)
-        S = PoweredSketchOp(self.num_pass, self.pps,  self.stabilizer,
-                            self.sketch_op_gen).exec(A, k, rng)
+        S = PoweredSketchOp(self.num_pass, self.passes_per_stab,
+                            self.stabilizer, self.sketch_op_gen).exec(A, k, rng)
         Y = A @ S
         Q = la.qr(Y, mode='economic')[0]
         return Q
