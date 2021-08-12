@@ -12,7 +12,7 @@ import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
 from ristretto.ballistic.rblas.sketching import gaussian_operator
-from ristretto.ballistic.randlapack.comps.powering import PoweredSketchOp
+from ristretto.ballistic.randlapack.comps.powering import PRSO1, RowSketchingOperator
 
 ###############################################################################
 #       Classic implementations, exposing fewest possible parameters.
@@ -47,12 +47,20 @@ def power_rangefinder(A, k, num_pass, rng):
     -------
     Q : ndarray
         Q.shape = (A.shape[0], k) has orthonormal columns.
+
+    Notes
+    -----
+    The implementation is built up as
+         PRSO1(RowSketchingOperator) --> RF1(RangeFinder)
     """
 
     rng = np.random.default_rng(rng)
-    rf = RF1(num_pass, passes_per_stab=1, stabilizer=util.orth,
-             sketch_op_gen=gaussian_operator)
-    Q = rf.exec(A, k, 0.0, rng)
+    rso_ = PRSO1(sketch_op_gen=gaussian_operator,
+                 num_pass=num_pass,
+                 stabilizer=util.orth,
+                 passes_per_stab=1)
+    rf_ = RF1(rso_)
+    Q = rf_.exec(A, k, 0.0, rng)
     return Q
 
 ###############################################################################
@@ -113,45 +121,23 @@ class RangeFinder:
 
 class RF1(RangeFinder):
 
-    def __init__(self, num_pass, passes_per_stab, stabilizer, sketch_op_gen):
-        if sketch_op_gen is None:
-            sketch_op_gen = gaussian_operator
-        if stabilizer is None:
-            stabilizer = util.orth
-        self.num_pass = num_pass
-        self.sketch_op_gen = sketch_op_gen
-        self.stabilizer = stabilizer
-        self.passes_per_stab = passes_per_stab
+    def __init__(self, rso: RowSketchingOperator):
+        self.rso = rso
 
     def exec(self, A, k, tol, rng):
         """
         Return a matrix Q with k orthonormal columns, where Range(Q) is
         an approximation for the span of A's top k left singular vectors.
 
-        Suppose A is m-by-n. This implementation uses (self.num_pass - 1)
-        passes over A to construct a sketching matrix S of dimensions (n, k).
-        Once S is in hand, we form "Y = A S and" return the factor Q
-        from a QR decomposition of Y.
+        This function works by
+            (1) Using a RowSketchingOperator object to generate a matrix S of
+                shape (A.shape[1], k),
+            (2) Computing Y = A @ S
+            (3) Returning the factor Q from a QR factorization of Y.
 
-        Here is how we would construct S in exact arithmetic:
-
-        if num_pass is odd
-            S = (A' A)^((self.num_pass-1)/2) self.sketch_op_gen(n, k, rng)
-        if num_pass is even
-            S = (A' A)^((self.num_pass-2)/2) A' self.sketch_op_gen(m, k, rng)
-
-        The actual matrix S matches the matrices above only up to its range.
-        The discrepancy is because forming the matrices above would result in
-        loss of precision from successive applications of (A, A'). We mitigate
-        this precision loss by the following procedure:
-
-        After "self.passes_per_stab" applications of A or A', we replace the
-        working matrix S (which might be of shape (n, k) or (m, k) at the time)
-        by S = self.stabilizer(S). An implementation of "self.stabilizer" is
-        valid as long as it returns a numerically well-behaved basis for the
-        range of its argument. The most common choice of self.stabilizer is
-        to return the factor Q from an (economic) QR factorization. An
-        alternative choice is to return the factor L from an LU decomposition.
+        The most common implementation of RowSketchingOpertaor is "PRSO1",
+        which uses a randomized power method to amplify the sampling power
+        of an oblivious sketching matrix.
 
         Parameters
         ----------
@@ -185,8 +171,7 @@ class RF1(RangeFinder):
             """
             warnings.warn(msg)
         rng = np.random.default_rng(rng)
-        S = PoweredSketchOp(self.num_pass, self.passes_per_stab,
-                            self.stabilizer, self.sketch_op_gen).exec(A, k, rng)
+        S = self.rso.exec(A, k, rng)
         Y = A @ S
         Q = la.qr(Y, mode='economic')[0]
         return Q

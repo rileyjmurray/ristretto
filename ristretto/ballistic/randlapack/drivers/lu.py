@@ -122,7 +122,7 @@ class LU1(LUDecomposer):
 
 class LU2(LUDecomposer):
 
-    def __init__(self, sk_op: rist_pow.SORS, lstsq: la.lstsq):
+    def __init__(self, sk_op: rist_pow.RowSketchingOperator, lstsq: la.lstsq):
         self.sk_op = sk_op
         self.lstsq = lstsq
 

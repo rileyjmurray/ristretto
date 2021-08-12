@@ -3,7 +3,8 @@ import scipy.linalg as la
 from ristretto.ballistic.rblas.sketching import gaussian_operator
 from ristretto.ballistic.randlapack.comps.rangefinders import RangeFinder,  \
     RF1
-from ristretto.ballistic.randlapack.comps.powering import SORS, PoweredSketchOp
+from ristretto.ballistic.randlapack.comps.powering import \
+    RowSketchingOperator,  PRSO1
 import ristretto.ballistic.randlapack.utilities as util
 
 
@@ -50,8 +51,10 @@ def qb(num_passes, A, k, rng):
     stabilize subspace iteration by a QR factorization at every step.
     """
     rng = np.random.default_rng(rng)
-    rf = RF1(num_passes - 1, 1, util.orth, gaussian_operator)
-    Q, B = QB1(rf).exec(A, k, 0, rng)
+    rso_ = PRSO1(gaussian_operator, num_passes - 2, util.orth, 1)
+    rf_ = RF1(rso_)
+    qb_ = QB1(rf_)
+    Q, B = qb_.exec(A, k, 0, rng)
     return Q, B
 
 
@@ -113,10 +116,15 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
     We perform (inner_num_pass - 2) steps of subspace iteration for each
     block of the QB factorization. We stabilize subspace iteration with
     QR factorization at each step.
+
+    The implementation is built up as
+        PRSO1(RowSketchingOperator) --> RF1(RangeFinder) --> QB2(QBFactorizer)
     """
     rng = np.random.default_rng(rng)
-    rf = RF1(inner_num_pass, 1, util.orth, gaussian_operator)
-    Q, B = QB2(rf, blk, overwrite_A).exec(A, k, tol, rng)
+    rso_ = PRSO1(gaussian_operator, inner_num_pass - 2, util.orth, 1)
+    rf_ = RF1(rso_)
+    qb_ = QB2(rf_, blk, overwrite_A)
+    Q, B = qb_.exec(A, k, tol, rng)
     return Q, B
 
 
@@ -175,7 +183,7 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
     We stabilize subspace iteration with a QR factorization at each step.
     """
     rng = np.random.default_rng(rng)
-    sk_op = PoweredSketchOp(num_passes, 1, util.orth, gaussian_operator)
+    sk_op = PRSO1(gaussian_operator, num_passes, util.orth, 1)
     Q, B = QB3(sk_op, blk).exec(A, k, tol, rng)
     return Q, B
 
@@ -228,8 +236,21 @@ class QBFactorizer:
 
 
 class QB1(QBFactorizer):
+    """
+    Direct reduction to the rangefinder problem. Given a rangefinder's output
+    Q, we set B = Q.T @ A and return (Q, B).
+    """
 
     def __init__(self, rf: RangeFinder):
+        """
+        Parameters
+        ----------
+        rf : RangeFinder
+            Q = rf.exec(A, k, tol, rng) has orthonormal columns. Its range
+            is supposed to approximate the space spanned by the leading left
+            singular vectors of A. The implementation constructed Q with
+            target rank "k" and target tolerance "tol".
+        """
         self.rangefinder = rf
 
     def exec(self, A, k, tol, rng):
@@ -369,7 +390,7 @@ class QB2(QBFactorizer):
 
 class QB3(QBFactorizer):
 
-    def __init__(self, sk_op: SORS, blk: int):
+    def __init__(self, sk_op: RowSketchingOperator, blk: int):
         self.sk_op = sk_op
         self.blk = blk
 

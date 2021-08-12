@@ -52,8 +52,38 @@ class SVDecomposer:
 
 
 class SVD1(SVDecomposer):
+    """
+    Use the Phase 1 / Phase 2 approach from HMT2011, where Phase 1 is
+    implemented by an arbitrary QB factorization method.
+    """
 
     def __init__(self, qb: rist_qb.QBFactorizer):
+        """
+
+        Parameters
+        ----------
+        qb : QBFactorizer
+            qb.exec(A, ell, tol, rng) returns a QB factorization of A with
+            target rank "ell", target tolerance "tol", using the numpy
+            Generator object np.random.default_rng(rng).
+
+        Notes
+        -----
+        Typical implementation structures include ...
+            PRSO1(RowSketchingOperator)
+            --> RF1(RangeFinder)
+            --> QB1(QBFactorizer)
+            --> SVD1(SVDecomposer)
+        or
+            PRSO1(RowSketchingOperator)
+            --> RF1(RangeFinder)
+            --> QB2(QBFactorizer)
+            --> SVD1(SVDecomposer)
+        or
+            PRSO1(RowSketchingOperator)
+            --> QB3(QBFactorizer)
+            --> SVD1(SVDecomposer)
+        """
         self.qb = qb
 
     def exec(self, A, k, tol, over, rng):
