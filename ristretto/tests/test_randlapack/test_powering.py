@@ -94,12 +94,12 @@ class TestPSO1(unittest.TestCase):
         # Finally, we run some tests that check performance
         # in expectation. We can place more stringent demands
         # on convergence rates in this aggregate test.
-        mean_val_rates = np.mean(fits['val']['rates'])
-        self.assertLessEqual(mean_val_rates, -0.7)
-        mean_vec_rates = np.mean(fits['vec']['rates'])
-        self.assertLessEqual(mean_vec_rates, -0.7)
         mean_val_r2s = np.mean(fits['val']['r2s'])
         self.assertGreaterEqual(mean_val_r2s, 0.8)
         mean_vec_r2s = np.mean(fits['vec']['r2s'])
         self.assertGreaterEqual(mean_vec_r2s, 0.8)
+        mean_val_rates = np.mean(fits['val']['rates'])
+        self.assertLessEqual(mean_val_rates, -0.7)
+        mean_vec_rates = np.mean(fits['vec']['rates'])
+        self.assertLessEqual(mean_vec_rates, -0.7)
         pass

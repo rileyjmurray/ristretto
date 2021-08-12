@@ -27,15 +27,18 @@ def rand_low_rank(n_rows, n_cols, spectrum: Union[int, np.ndarray], rng):
 
 
 def loglinear_fit(x, y):
+    """
+    min{ || [1, x] @ [a; b] - log(y) ||_2 : a, b are real numbers }
+    """
     assert x.size == y.size
     x = x.ravel()
     if np.any(y <= 0):
-        warnings.warn('Dropping samples "i" where y[i] == 0.')
+        warnings.warn('Dropping samples "i" where y[i] <= 0.')
         x = x[y > 0]
         y = y[y > 0]
     logy = np.log(y).ravel()
     mat = np.column_stack([np.ones(x.size), x])
-    fit, residues = la.lstsq(mat, logy)[:2]
+    fit = la.lstsq(mat, logy)[0]
     ss_tot = np.sum((logy - np.mean(logy))**2)
     ss_res = np.sum((logy - mat @ fit)**2)
     r2 = 1 - ss_res/ss_tot
