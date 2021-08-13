@@ -1,29 +1,28 @@
 import numpy as np
 import scipy.sparse as spar
-import scipy.sparse.linalg as sparla
 from scipy.fft import dct
 
 
-def gaussian_operator(n_rows, n_cols, gen=None, normalize=True):
-    gen = np.random.default_rng(gen)
+def gaussian_operator(n_rows, n_cols, rng=None, normalize=True):
+    rng = np.random.default_rng(rng)
     if normalize:
         scale = np.sqrt(1.0/min(n_rows, n_cols))
-        S = gen.normal(0.0, scale, (n_rows, n_cols))
+        S = rng.normal(0.0, scale, (n_rows, n_cols))
         # if more cols than rows (typical of embeddings),
         # want E[S.T @ S] = I. If more rows than cols
         # (typical of test matrices in low-rank factorizations),
         # want E[S @ S.T] = I
     else:
-        S = gen.standard_normal((n_rows, n_cols))
+        S = rng.standard_normal((n_rows, n_cols))
     return S
 
 
-def sjlt_operator(n_rows, n_cols, gen=None, vec_nnz=8):
+def sjlt_operator(n_rows, n_cols, rng=None, vec_nnz=8):
     """
 
     Parameters
     ----------
-    gen
+    rng
     n_rows : int
         number of rows of embedding operator
     n_cols : int
@@ -35,19 +34,19 @@ def sjlt_operator(n_rows, n_cols, gen=None, vec_nnz=8):
     -------
     S : SciPy sparse matrix
     """
-    gen = np.random.default_rng(gen)
+    rng = np.random.default_rng(rng)
     if n_cols >= n_rows:
         vec_nnz = min(n_cols, vec_nnz)
         # column and row indices
         row_vecs = []
         for i in range(n_cols):
-            rows = gen.choice(n_rows, vec_nnz, replace=False)
+            rows = rng.choice(n_rows, vec_nnz, replace=False)
             row_vecs.append(rows)
         rows = np.concatenate(row_vecs)
         cols = np.repeat(np.arange(n_cols), vec_nnz)
         # values for each row and col
         vals = np.ones(n_cols * vec_nnz)
-        vals[gen.random(n_cols * vec_nnz) <= 0.5] = -1
+        vals[rng.random(n_cols * vec_nnz) <= 0.5] = -1
         vals /= np.sqrt(vec_nnz)
         # wrap up
         S = spar.coo_matrix((vals, (rows, cols)), shape=(n_rows, n_cols))
@@ -55,27 +54,27 @@ def sjlt_operator(n_rows, n_cols, gen=None, vec_nnz=8):
     else:
         #TODO: make this more efficient. (Form S directly, avoid converting
         #   from CSC to CSR.)
-        S = sjlt_operator(n_cols, n_rows, gen, vec_nnz)
+        S = sjlt_operator(n_cols, n_rows, rng, vec_nnz)
         S = (S.T).tocsr()
     return S
 
 
-def sparse_sign_operator(n_rows, n_cols, gen=None, density=0.05):
+def sparse_sign_operator(n_rows, n_cols, rng=None, density=0.05):
     # get row indices and col indices
-    gen = np.random.default_rng(gen)
-    nonzero_idxs = gen.random(n_rows * n_cols) < density
+    rng = np.random.default_rng(rng)
+    nonzero_idxs = rng.random(n_rows * n_cols) < density
     attempt = 0
     while np.all(~nonzero_idxs):
         if attempt == 10:
             raise RuntimeError('Density too low.')
-        nonzero_idxs = gen.random(n_rows * n_cols) < density
+        nonzero_idxs = rng.random(n_rows * n_cols) < density
         attempt += 1
     nonzero_idxs = np.where(nonzero_idxs)[0]
     rows, cols = np.unravel_index(nonzero_idxs, (n_rows, n_cols))
     # get values for each row and col index
     nnz = rows.size
     vals = np.ones(nnz)
-    vals[gen.random(vals.size) < 0.5] = -1
+    vals[rng.random(vals.size) < 0.5] = -1
     vals /= np.sqrt(min(n_rows, n_cols) * density)
     # Wrap up
     S = spar.coo_matrix((vals, (rows, cols)), shape=(n_rows, n_cols))
@@ -83,31 +82,16 @@ def sparse_sign_operator(n_rows, n_cols, gen=None, density=0.05):
     return S
 
 
-def srct_operator(n_rows, n_cols, gen=None):
-    if n_cols >= n_rows:
-        r = gen.choice(n_cols, size=n_rows, replace=False)
-        e = gen.random(n_cols)
-        e[e > 0.5] = 1.0
-        e[e != 1] = -1.0
-        e *= np.sqrt(n_cols / n_rows)
-
-        def srct(mat):
-            return apply_srct(r, e, mat, None)
-
-        S = sparla.LinearOperator(shape=(n_rows, n_cols), matvec=srct, matmat=srct)
-        S.__dict__['sketch_data'] = (r, e)
-    else:
-        r = gen.choice(n_rows, size=n_cols, replace=False)
-        e = gen.random(n_rows)
-        e[e > 0.5] = 1.0
-        e[e != 1] = -1.0
-        e *= np.sqrt(n_rows / n_cols)
-
-        def srct(mat):
-            return apply_srct(r, e, mat.T, None).T
-
-        S = sparla.LinearOperator(shape=(n_rows, n_cols), rmatvec=srct, rmatmat=srct)
-    return S
+def srct_data(n_rows, n_cols, rng):
+    big_dim = max(n_rows, n_cols)
+    small_dim = min(n_rows, n_cols)
+    r = rng.choice(big_dim, size=small_dim, replace=False)
+    e = rng.random(big_dim)
+    e[e > 0.5] = 1.0
+    e[e != 1] = -1.0
+    e *= np.sqrt(big_dim / small_dim)
+    perm = rng.permutation(big_dim)
+    return r, e, perm
 
 
 def apply_srct(r, e, mat, perm=None):

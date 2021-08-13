@@ -12,7 +12,7 @@ from ristretto.ballistic.randlapack.comps import deterministic as de
 class LstsqSolver:
     """Solver for overdetermined ordinary least-squares."""
 
-    def exec(self, A, b, d, tol, iter_lim, rng):
+    def exec(self, A, b, tol, iter_lim, rng):
         """
         Return an approximate solution to
             min{ ||A x - b||_2 : x in R^n }.
@@ -29,9 +29,6 @@ class LstsqSolver:
 
         b : ndarray
             Right-hand-side.
-
-        d : int
-            Embedding dimension. Typically, A.shape[0] >> d > A.shape[1].
 
         tol : float
             This parameter is only relevant for implementations that involve
@@ -80,14 +77,14 @@ class SAS1(LstsqSolver):
     driver to be used in solving sketched least squares problems.
     """
 
-    def __init__(self, sketch_op_gen, lapack_driver=None,
+    def __init__(self, sketch_op_gen, sampling_factor, lapack_driver=None,
                  overwrite_sketch=True):
         self.sketch_op_gen = sketch_op_gen
+        self.sampling_factor = sampling_factor
         self.lapack_driver = lapack_driver
         self.overwrite_sketch = overwrite_sketch
 
-    def exec(self, A, b, d, tol, iter_lim, rng):
-        assert d >= A.shape[1] > A.shape[0]
+    def exec(self, A, b, tol, iter_lim, rng):
         assert tol < np.inf
         if tol > 0:
             msg = """
@@ -101,9 +98,12 @@ class SAS1(LstsqSolver):
             Parameter "iter_lim" is being ignored.
             """
             warnings.warn(msg)
-
+        n_rows, n_cols = A.shape
+        d = int(self.sampling_factor * n_cols)
+        assert d < n_rows
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
-        S = self.sketch_op_gen(d, A.shape[0], rng)
+        S = self.sketch_op_gen(d, n_rows, rng)
         A_ske = S @ A
         b_ske = S @ b
         res = la.lstsq(A_ske, b_ske,
@@ -126,14 +126,17 @@ class SAP1(LstsqSolver):
     This implementation assumes A is full rank.
     """
 
-    def __init__(self, sketch_op_gen):
+    def __init__(self, sketch_op_gen, sampling_factor: int):
         self.sketch_op_gen = sketch_op_gen
+        self.sampling_factor = sampling_factor
 
-    def exec(self, A, b, d, tol, iter_lim, rng):
-        assert d >= A.shape[1] > A.shape[0]
+    def exec(self, A, b, tol, iter_lim, rng):
+        n_rows, n_cols = A.shape
+        d = int(self.sampling_factor * n_cols)
+        assert d < n_rows
         assert tol < np.inf
         rng = np.random.default_rng(rng)
-        S = self.sketch_op_gen(d, A.shape[0], rng)
+        S = self.sketch_op_gen(d, n_rows, rng)
         A_ske = S @ A
         Q, R = la.qr(A_ske, overwrite_a=True, mode='economic')
         b_ske = S @ b
@@ -158,15 +161,18 @@ class SAP2(LstsqSolver):
     This implementation does not require that A is full-rank.
     """
 
-    def __init__(self, sketch_op_gen, smart_init):
+    def __init__(self, sketch_op_gen, sampling_factor, smart_init):
         self.sketch_op_gen = sketch_op_gen
+        self.sampling_factor = sampling_factor
         self.smart_init = smart_init
 
-    def exec(self, A, b, d, tol, iter_lim, rng):
-        assert d >= A.shape[1] > A.shape[0]
+    def exec(self, A, b, tol, iter_lim, rng):
+        n_rows, n_cols = A.shape
+        d = int(self.sampling_factor * n_cols)
+        assert d < n_rows
         assert tol < np.inf
         rng = np.random.default_rng(rng)
-        S = self.sketch_op_gen(d, A.shape[0], rng)
+        S = self.sketch_op_gen(d, n_rows, rng)
         A_ske = S @ A
         # noinspection PyTupleAssignmentBalance
         U, sigma, Vh = la.svd(A_ske, overwrite_a=True, check_finite=False,
@@ -182,11 +188,14 @@ class SAP2(LstsqSolver):
             b_remainder = b - A @ x_ske
             if la.norm(b_remainder, ord=2) < la.norm(b, ord=2):
                 # x_ske is a better starting point than the zero vector.
-                y_star = de.pinv_precond_lsqr(A, b_remainder, N, tol, iter_lim)
-                x_star = y_star + x_ske
+                y_star = de.pinv_precond_lsqr(A, b_remainder,
+                                              N, tol, iter_lim)[0]
+                x_star = N @ y_star + x_ske
             else:
                 # The zero vector is at least as good as x_ske.
-                x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
+                y_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
+                x_star = N @ y_star
         else:
-            x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
+            y_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
+            x_star = N @ y_star
         return x_star

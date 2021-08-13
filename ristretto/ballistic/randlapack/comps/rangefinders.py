@@ -11,7 +11,7 @@ import warnings
 import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
-from ristretto.ballistic.rblas.sketching import gaussian_operator
+from ristretto.ballistic.randlapack.linops import gaussian_operator
 from ristretto.ballistic.randlapack.comps.powering import PRSO1, RowSketchingOperator
 
 ###############################################################################
