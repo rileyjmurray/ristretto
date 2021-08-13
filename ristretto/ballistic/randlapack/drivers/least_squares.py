@@ -130,6 +130,8 @@ class SAP1(LstsqSolver):
         self.sketch_op_gen = sketch_op_gen
 
     def exec(self, A, b, d, tol, iter_lim, rng):
+        assert d >= A.shape[1] > A.shape[0]
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
         S = self.sketch_op_gen(d, A.shape[0], rng)
         A_ske = S @ A
@@ -149,13 +151,20 @@ class SAP2(LstsqSolver):
     squares. This implementation uses the SVD to obtain the preconditioner
     and it uses LSQR for the iterative method.
 
+    Before starting LSQR, we run a basic sketch-and-solve (for free, given
+    our SVD of the sketched data matrix) to obtain a solution x_ske.
+    If ||A x_ske - b||_2 < ||b||_2, then we initialize LSQR at x_ske.
+
     This implementation does not require that A is full-rank.
     """
 
-    def __init__(self, sketch_op_gen):
+    def __init__(self, sketch_op_gen, smart_init):
         self.sketch_op_gen = sketch_op_gen
+        self.smart_init = smart_init
 
     def exec(self, A, b, d, tol, iter_lim, rng):
+        assert d >= A.shape[1] > A.shape[0]
+        assert tol < np.inf
         rng = np.random.default_rng(rng)
         S = self.sketch_op_gen(d, A.shape[0], rng)
         A_ske = S @ A
@@ -165,8 +174,19 @@ class SAP2(LstsqSolver):
         rank = np.count_nonzero(
             sigma > sigma[0] * np.min(A.shape) * np.finfo(float).eps)
         N = Vh[:rank, :].T / sigma[:rank]
-        # TODO: solve (A_ske' A_ske) x_ske = A_ske' b_ske using the SVD,
-        #   then update b = b - A x_ske, then run preconditioned LSQR to get
-        #   x, and finally update x += x_ske.
-        res = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
-        return res
+        if self.smart_init:
+            # This isn't necessarily preferable, because it changes the
+            # norm of b, which affects termination criteria.
+            b_ske = S @ b
+            x_ske = N @ (U[:, :rank].T @ b_ske)
+            b_remainder = b - A @ x_ske
+            if la.norm(b_remainder, ord=2) < la.norm(b, ord=2):
+                # x_ske is a better starting point than the zero vector.
+                y_star = de.pinv_precond_lsqr(A, b_remainder, N, tol, iter_lim)
+                x_star = y_star + x_ske
+            else:
+                # The zero vector is at least as good as x_ske.
+                x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
+        else:
+            x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)
+        return x_star
