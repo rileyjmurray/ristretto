@@ -37,12 +37,13 @@ class RowSketchingOperator:
 
     def exec(self, A, k, rng):
         """
-        Return a matrix S where range(S) is "reasonably" well
-        aligned with the span of the top k right singular vectors
-        of A. Do this while optionally incorporating information
-        about A, e.g., by subspace powering. It's possible that
-        we construct the matrix S without accessing A, but in that
-        situation the meaning of "reasonable" is very weak.
+        Return a matrix S where range(S) is "reasonably" well aligned with
+        the span of the top k right singular vectors of A.
+
+        Do this while optionally incorporating information about A, e.g.,
+        by subspace powering. It's possible that we construct the matrix S
+        without accessing A, but in that situation the meaning of
+        "reasonable" is very weak.
 
         Parameters
         ----------
@@ -85,6 +86,30 @@ class PRSO1(RowSketchingOperator):
         The number of passes over A (or A.T).
         How we stabilize the power method. E.g., QR or LU factorization.
         How often we stabilize the power method.
+
+    References
+    ----------
+    This implementation is inspired by [ZM:2020, Algorithm 3.3]. The most
+    significant difference is that this function stops one step "early",
+    so that it returns a matrix S for use in sketching Y = A @ S, rather than
+    returning an orthonormal basis for a sketched matrix Y. Here are the
+    differences between this implementation and [ZM:2020, Algorithm 3.3],
+    assuming the latter algorithm was modified to stop "one step early" like
+    this algorithm:
+
+        (1) We make no assumptions on the distribution of the initial
+            (oblivious) sketching matrix. [ZM:2020, Algorithm 3.3] uses
+            a Gaussian distribution.
+
+        (2) We allow any number of passes over A, including zero passes.
+            [ZM2020: Algorithm 3.3] requires at least one pass over A.
+
+        (3) We let the user provide the stabilization method. [ZM:2020,
+            Algorithm 3.3] uses LU for stabilization.
+
+        (4) We let the user decide how many applications of A or A.T
+            can be made between calls to the stabilizer. We
+
     """
 
     def __init__(self, sketch_op_gen, num_pass, stabilizer, passes_per_stab):
@@ -95,30 +120,39 @@ class PRSO1(RowSketchingOperator):
 
     def exec(self, A, k, rng):
         """
-        Use self.num_pass passes over the matrix A to generate a matrix S
-        where range(S) is (hopefully) closely aligned with the span of A's
-        top right singular vectors. This is useful for estimating the span of
-        the top *left* singular vectors of A, by evaluating Y = A @ S.
+        Return a matrix S where range(S) is "reasonably" well aligned with
+        the span of the top k right singular vectors of A.
 
-        We accomplish this roughly as follows:
+        Do this with a subspace iteration approach that takes "self.num_pass"
+        passes over A. The subspace iteration is initialized with a matrix
+        from self.sketch_op_gen. The subspace iteration is stabilized by
+        self.stabilizer, which is called after every "self.passes_per_stab"
+        cumulative passes over A and A.T.
 
-        if self.num_pass is even
+        Parameters
+        ----------
+        A : Union[ndarray, spmatrix, LinearOperator]
+            Data matrix we'll sketch later with Y = A @ S.
+
+        k : int
+            Number of columns of S.
+
+        rng : Union[None, int, SeedSequence, BitGenerator, Generator]
+            Determines the numpy Generator object that manages any and all
+            randomness in this function call.
+
+        Notes
+        -----
+        If computation was performed in exact arithmetic, then the range
+        of the returned matrix S would match that of
+
             S = (A' A)^(self.num_pass/2) self.sketch_op_gen(n, k, rng)
-        if self.num_pass is odd
+
+        if self.num_pass is even, or that of
+
             S = (A' A)^((self.num_pass-1)/2) A' self.sketch_op_gen(m, k, rng)
 
-        The actual matrix S matches the matrices above only up to its range.
-        The discrepancy is because forming the matrices above would result in
-        loss of precision from successive applications of (A, A'). We mitigate
-        this precision loss by the following procedure:
-
-        After "self.passes_per_stab" applications of A or A', we replace the
-        working matrix S (which might be of shape (n, k) or (m, k) at the time)
-        by S = self.stabilizer(S). An implementation of "self.stabilizer" is
-        valid as long as it returns a numerically well-behaved basis for the
-        range of its argument. The most common choice of self.stabilizer is
-        to return the factor Q from an (economic) QR factorization. An
-        alternative choice is to return the factor L from an LU decomposition.
+        if self.num_pass is odd.
         """
         rng = np.random.default_rng(rng)
         external_num_pass = self.num_pass + 1

@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as la
+import scipy.sparse.linalg as sparla
 from ristretto.ballistic.randlapack.linops import gaussian_operator
 from ristretto.ballistic.randlapack.comps.rangefinders import RangeFinder,  \
     RF1
@@ -49,6 +50,30 @@ def qb(num_passes, A, k, rng):
     -----
     We perform (num_passes - 2) steps of subspace iteration, and
     stabilize subspace iteration by a QR factorization at every step.
+
+    References
+    ----------
+    This algorithm computes Q and then sets B = Q.T @ A. Conceptually, we
+    compute Q by using Algorithm 4.3 (see also Algorithm 4.4) from
+
+        Halko, Nathan, Per-Gunnar Martinsson, and Joel A. Tropp.
+        "Finding structure with randomness: Probabilistic algorithms for
+        constructing approximate matrix decompositions."
+        SIAM review 53.2 (2011): 217-288.
+        (available at `arXiv <http://arxiv.org/abs/0909.4061>`_).
+
+    The precise subspace iteration technique is similar to that of Algorithm
+    3.3 from
+
+         Bolong Zhang and Michael Mascagni.
+         "Pass-Efficient Randomized LU Algorithms for Computing Low-Rank
+         Matrix Approximation"
+         arXiv:2002.07138 (2020).
+
+    There are two differences between this implementation and Zhang and
+    Mascagni's Algorithm 3.3: we use QR decompositions where they use LU
+    decompositions, and we allow 0 steps or 1 step of subspace iteration,
+    where their implementation requires >= 2 steps.
     """
     rng = np.random.default_rng(rng)
     rso_ = PRSO1(gaussian_operator, num_passes - 2, util.orth, 1)
@@ -119,6 +144,21 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
 
     The implementation is built up as
         PRSO1(RowSketchingOperator) --> RF1(RangeFinder) --> QB2(QBFactorizer)
+
+    References
+    ----------
+    This implements a variant of Algorithm 2 from YGL:2018. There are two
+    main differences.
+
+        (1) We allow subspace iteration when building a new block (Qi, Bi)
+            of the QB factorization. That is, [YGL:2018, Algorithm 2] requires
+            inner_num_pass = 2.
+
+        (2) We have to explicitly update A.
+
+    Straightforward changes to the implementation of QB2.exec(...) would remove
+    the second of these differences. Refer to QB2.exec(...) for more
+    information.
     """
     rng = np.random.default_rng(rng)
     rso_ = PRSO1(gaussian_operator, inner_num_pass - 2, util.orth, 1)
@@ -181,6 +221,13 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
     could run this algorithm using only num_passes passes over A.
 
     We stabilize subspace iteration with a QR factorization at each step.
+
+    References
+    ----------
+    This implements a variant of [YGL:2018, Algorithm 4]. The difference is
+    that [YGL:2018, Algorithm 4]'s subspace iteration requires an even number
+    of passes over A, while our subspace iteration can perform any number of
+    passes over A.
     """
     rng = np.random.default_rng(rng)
     sk_op = PRSO1(gaussian_operator, num_passes, util.orth, 1)
@@ -292,6 +339,7 @@ class QB1(QBFactorizer):
         """
         assert k > 0
         assert k <= min(A.shape)
+        assert tol >= 0
         assert tol < np.inf
         rng = np.random.default_rng(rng)
         Q = self.rangefinder.exec(A, k, tol, rng)
@@ -355,12 +403,32 @@ class QB2(QBFactorizer):
 
         B : ndarray
             Equal to Q.T @ A (although not computed in that way).
+
+        References
+        ----------
+
+        This implements a variant of Algorithm 2 from YGL:2018. There are two
+        main differences.
+
+            (1) We allow any rangefinder when building a new block (Qi, Bi),
+                while [YGL:2018, Algorithm 2] uses the elementary single-pass
+                rangefinder Yi = A @ Si, Qi = orth(Yi).
+
+            (2) We have to explicitly update A.
+
+        The second difference can be reconciled by (mathematically) calling the
+        rangefinder on the linear operator L = A - Q @ B. In particular, although
+        our algorithm forms Bi = Qi.T @ A on the updated version of A, it is
+        mathematically equivalent to perform that step on the original matrix A
+        (as is done in [YGL:2018, Algorithm 2, Line 7]).
         """
         if not self.overwrite_a:
             A = np.copy(A)
         assert k > 0
         assert k <= min(A.shape)
-        assert tol < np.inf
+        if not np.isnan(tol):
+            assert tol >= 0
+            assert tol < np.inf
         rng = np.random.default_rng(rng)
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
@@ -440,13 +508,31 @@ class QB3(QBFactorizer):
         self.num_passes + 1 passes over A. An efficient implementation
         using two-in-one sketching could run this algorithm using only
         self.num_passes passes over A.
+
+        References
+        ----------
+        The basic approach for this algorithm comes from [YGLLL:2017,
+        Algorithm 3], which is expanded upon in [YGL:2018, Algorithm 4].
+        The latter algorithm includes support for subspace iteration,
+        which serves the purpose of aligning the columns of the sketching
+        matrix S with the leading right singular vectors of A.
+
+        This implementation generalizes [YGL:2018, Algorithm 4] by being
+        agnostic to how S is formed. We obtain it by calling S =
+        self.sk_op.exec(A, k, rng), where self.sk_op is a RowSketchingOperator.
+
+        Subspace iteration can be used to implement a RowSketchingOperator's
+        "exec" function, but that is not the only possible implementation.
+        Refer the the RowSketchingOperator interface for more information.
         """
         assert k > 0
         assert k < min(A.shape)
-        assert tol < np.inf
+        if not np.isnan(tol):
+            assert tol >= 0
+            assert tol < np.inf
         Q = np.empty(shape=(A.shape[0], 0), dtype=float)
         B = np.empty(shape=(0, A.shape[1]), dtype=float)
-        if tol < np.inf:
+        if tol > 0:
             sq_norm_A = la.norm(A, ord='fro') ** 2
             sq_tol = tol**2
         rng = np.random.default_rng(rng)

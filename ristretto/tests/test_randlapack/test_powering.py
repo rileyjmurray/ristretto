@@ -9,7 +9,7 @@ import ristretto.tests.test_randlapack.utilities as test_util
 import ristretto.ballistic.randlapack.comps.powering as rist_pow
 
 
-class TestPSO1(unittest.TestCase):
+class TestPRSO1(unittest.TestCase):
     """
     From the PRSO1 documentation ...
 

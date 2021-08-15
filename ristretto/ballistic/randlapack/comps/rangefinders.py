@@ -12,7 +12,8 @@ import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
 from ristretto.ballistic.randlapack.linops import gaussian_operator
-from ristretto.ballistic.randlapack.comps.powering import PRSO1, RowSketchingOperator
+from ristretto.ballistic.randlapack.comps.powering import PRSO1,  \
+    RowSketchingOperator
 
 ###############################################################################
 #       Classic implementations, exposing fewest possible parameters.
@@ -52,8 +53,15 @@ def power_rangefinder(A, k, num_pass, rng):
     -----
     The implementation is built up as
          PRSO1(RowSketchingOperator) --> RF1(RangeFinder)
-    """
 
+    References
+    ----------
+    Conceptually, we compute Q by using [HMT:2011, Algorithm 4.3] and
+    [HMT:2011, Algorithm 4.4]. However, is a difference in how we perform
+    subspace iteration. Our subspace iteration still uses QR to stabilize
+    computations at each step, but computations are structured along the
+    lines of [ZM:2020, Algorithm 3.3] to allow for any number of passes over A.
+    """
     rng = np.random.default_rng(rng)
     rso_ = PRSO1(sketch_op_gen=gaussian_operator,
                  num_pass=num_pass,
@@ -72,9 +80,8 @@ class RangeFinder:
 
     def exec(self, A, k, tol, rng):
         """
-        Return a matrix Q with orthonormal columns, where Range(Q) is
-        "reasonably" closely aligned with the top dim(Range(Q)) left
-        singular vectors of A.
+        Return a matrix Q with orthonormal columns, where range(Q) is
+        "reasonably" well aligned with A's leading left singular vectors.
 
         Parameters
         ----------
@@ -98,9 +105,7 @@ class RangeFinder:
             tol=0 means the implementation will return Q with exactly k columns.
 
             Implementations that cannot control error should raise a warning
-            if tol > 0. The rationale for this behavior is that setting
-            tol > 0 indicates an intention on the user's part that approximation
-            error play a role in the stopping criteria.
+            if tol is not NaN.
 
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
@@ -149,8 +154,8 @@ class RF1(RangeFinder):
 
         tol : float
             Refer to the RangeFinder interface for the general meaning
-            of this parameter. This implementation checks if top < np.inf,
-            returns a warning if tol > 0, but otherwise ignores tol.
+            of this parameter. This implementation cannot control solution
+            accuracy and so will raise a warning if tol is not NaN.
 
         rng : Union[None, int, SeedSequence, BitGenerator, Generator]
             Determines the numpy Generator object that manages any and all
@@ -160,11 +165,18 @@ class RF1(RangeFinder):
         -------
         Q : ndarray
             Q.shape = (A.shape[0], k) and has orthonormal columns.
+
+        References
+        ----------
+        This RangeFinder implementation originally relied on a subspace
+        iteration routine (along the lines of [ZM:2020, Algorithm 3.3]).
+        However, subspace iteration is merely a means to an end, which is
+        to produce a matrix S where range(S) is reasonably well aligned with
+        A's leading right singular vectors.
         """
         assert k > 0
         assert k <= min(A.shape)
-        assert tol < np.inf
-        if tol > 0:
+        if not np.isnan(tol):
             msg = """
             This RangeFinder implementation cannot directly control
             approximation error. Parameter "tol" is being ignored.
