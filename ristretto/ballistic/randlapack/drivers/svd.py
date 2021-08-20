@@ -70,17 +70,17 @@ class SVD1(SVDecomposer):
         Notes
         -----
         Typical implementation structures include ...
-            PRSO1(RowSketchingOperator)
+            RS1(RowSketcher)
             --> RF1(RangeFinder)
             --> QB1(QBFactorizer)
             --> SVD1(SVDecomposer)
         or
-            PRSO1(RowSketchingOperator)
+            RS1(RowSketcher)
             --> RF1(RangeFinder)
             --> QB2(QBFactorizer)
             --> SVD1(SVDecomposer)
         or
-            PRSO1(RowSketchingOperator)
+            RS1(RowSketcher)
             --> QB3(QBFactorizer)
             --> SVD1(SVDecomposer)
         """

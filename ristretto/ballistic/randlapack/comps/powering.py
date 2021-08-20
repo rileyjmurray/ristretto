@@ -20,14 +20,14 @@ def powered_range_sketch_op(num_pass, A, k, rng):
     assert num_pass >= 0
     assert k >= 1
     assert k <= min(A.shape)
-    S = PRSO1(sketch_op_gen=rist_sk.gaussian_operator,
-              num_pass=num_pass,
-              stabilizer=rist_util.orth,
-              passes_per_stab=1).exec(A, k, rng)
+    S = RS1(sketch_op_gen=rist_sk.gaussian_operator,
+            num_pass=num_pass,
+            stabilizer=rist_util.orth,
+            passes_per_stab=1).exec(A, k, rng)
     return S
 
 
-class RowSketchingOperator:
+class RowSketcher:
     """
     Given a matrix A and a positive integer k, generates a matrix S with k
     columns, for later use in sketching Y = A @ S. By virtue of taking
@@ -70,11 +70,11 @@ class RowSketchingOperator:
         raise NotImplementedError()
 
 
-class PRSO1(RowSketchingOperator):
+class RS1(RowSketcher):
     """
     Powered Row Sketching Operator
 
-    PRSO1 objects are used to create n-by-k matrices S for use in sketching
+    RS1 objects are used to create n-by-k matrices S for use in sketching
     the rows of an m-by-n matrix A. The qualitative goal is that the range
     of S should be well-aligned with the top-k right singular vectors of A.
 

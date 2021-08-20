@@ -5,7 +5,7 @@ from ristretto.ballistic.randlapack.linops import gaussian_operator
 from ristretto.ballistic.randlapack.comps.rangefinders import RangeFinder,  \
     RF1
 from ristretto.ballistic.randlapack.comps.powering import \
-    RowSketchingOperator,  PRSO1
+    RowSketcher,  RS1
 import ristretto.ballistic.randlapack.utilities as util
 
 
@@ -76,7 +76,7 @@ def qb(num_passes, A, k, rng):
     where their implementation requires >= 2 steps.
     """
     rng = np.random.default_rng(rng)
-    rso_ = PRSO1(gaussian_operator, num_passes - 2, util.orth, 1)
+    rso_ = RS1(gaussian_operator, num_passes - 2, util.orth, 1)
     rf_ = RF1(rso_)
     qb_ = QB1(rf_)
     Q, B = qb_.exec(A, k, 0, rng)
@@ -143,7 +143,7 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
     QR factorization at each step.
 
     The implementation is built up as
-        PRSO1(RowSketchingOperator) --> RF1(RangeFinder) --> QB2(QBFactorizer)
+        RS1(RowSketcher) --> RF1(RangeFinder) --> QB2(QBFactorizer)
 
     References
     ----------
@@ -161,7 +161,7 @@ def qb_b_fet(inner_num_pass, blk, overwrite_A, A, k, tol, rng):
     information.
     """
     rng = np.random.default_rng(rng)
-    rso_ = PRSO1(gaussian_operator, inner_num_pass - 2, util.orth, 1)
+    rso_ = RS1(gaussian_operator, inner_num_pass - 2, util.orth, 1)
     rf_ = RF1(rso_)
     qb_ = QB2(rf_, blk, overwrite_A)
     Q, B = qb_.exec(A, k, tol, rng)
@@ -230,7 +230,7 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
     passes over A.
     """
     rng = np.random.default_rng(rng)
-    sk_op = PRSO1(gaussian_operator, num_passes, util.orth, 1)
+    sk_op = RS1(gaussian_operator, num_passes, util.orth, 1)
     Q, B = QB3(sk_op, blk).exec(A, k, tol, rng)
     return Q, B
 
@@ -475,7 +475,7 @@ class QB3(QBFactorizer):
 
     TOL_CONTROL = 'early stopping'
 
-    def __init__(self, sk_op: RowSketchingOperator, blk: int):
+    def __init__(self, sk_op: RowSketcher, blk: int):
         self.sk_op = sk_op
         self.blk = blk
 
@@ -536,11 +536,11 @@ class QB3(QBFactorizer):
 
         This implementation generalizes [YGL:2018, Algorithm 4] by being
         agnostic to how S is formed. We obtain it by calling S =
-        self.sk_op.exec(A, k, rng), where self.sk_op is a RowSketchingOperator.
+        self.sk_op.exec(A, k, rng), where self.sk_op is a RowSketcher.
 
-        Subspace iteration can be used to implement a RowSketchingOperator's
+        Subspace iteration can be used to implement a RowSketcher's
         "exec" function, but that is not the only possible implementation.
-        Refer the the RowSketchingOperator interface for more information.
+        Refer the the RowSketcher interface for more information.
         """
         assert k > 0
         assert k < min(A.shape)

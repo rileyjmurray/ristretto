@@ -11,9 +11,9 @@ import ristretto.ballistic.randlapack.comps.powering as rist_pow
 
 class TestPRSO1(unittest.TestCase):
     """
-    From the PRSO1 documentation ...
+    From the RS1 documentation ...
 
-        PRSO1 objects are used to create n-by-k matrices S for use in sketching
+        RS1 objects are used to create n-by-k matrices S for use in sketching
         the rows of an m-by-n matrix A. The qualitative goal is that the range
         of S should be well-aligned with the top-k right singular vectors of A.
 
@@ -28,17 +28,17 @@ class TestPRSO1(unittest.TestCase):
     """
 
     def test_max_eig_orth(self):
-        ps = rist_pow.PRSO1(sketch_op_gen=rist_sk.gaussian_operator,
-                            num_pass=np.NaN,  # We'll set this later.
-                            stabilizer=rist_util.orth,
-                            passes_per_stab=1)
+        ps = rist_pow.RS1(sketch_op_gen=rist_sk.gaussian_operator,
+                          num_pass=np.NaN,  # We'll set this later.
+                          stabilizer=rist_util.orth,
+                          passes_per_stab=1)
         self._test_max_eig(ps)
 
     def test_max_eig_lu(self):
-        ps = rist_pow.PRSO1(sketch_op_gen=rist_sk.gaussian_operator,
-                            num_pass=np.NaN,  # We'll set this later.
-                            stabilizer=rist_util.lu_stabilize,
-                            passes_per_stab=1)
+        ps = rist_pow.RS1(sketch_op_gen=rist_sk.gaussian_operator,
+                          num_pass=np.NaN,  # We'll set this later.
+                          stabilizer=rist_util.lu_stabilize,
+                          passes_per_stab=1)
         self._test_max_eig(ps)
 
     def _test_max_eig(self, ps):

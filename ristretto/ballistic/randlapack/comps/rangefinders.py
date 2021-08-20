@@ -12,8 +12,8 @@ import numpy as np
 import scipy.linalg as la
 import ristretto.ballistic.randlapack.utilities as util
 from ristretto.ballistic.randlapack.linops import gaussian_operator
-from ristretto.ballistic.randlapack.comps.powering import PRSO1,  \
-    RowSketchingOperator
+from ristretto.ballistic.randlapack.comps.powering import RS1,  \
+    RowSketcher
 
 ###############################################################################
 #       Classic implementations, exposing fewest possible parameters.
@@ -52,7 +52,7 @@ def power_rangefinder(A, k, num_pass, rng):
     Notes
     -----
     The implementation is built up as
-         PRSO1(RowSketchingOperator) --> RF1(RangeFinder)
+         RS1(RowSketcher) --> RF1(RangeFinder)
 
     References
     ----------
@@ -63,10 +63,10 @@ def power_rangefinder(A, k, num_pass, rng):
     lines of [ZM:2020, Algorithm 3.3] to allow for any number of passes over A.
     """
     rng = np.random.default_rng(rng)
-    rso_ = PRSO1(sketch_op_gen=gaussian_operator,
-                 num_pass=num_pass,
-                 stabilizer=util.orth,
-                 passes_per_stab=1)
+    rso_ = RS1(sketch_op_gen=gaussian_operator,
+               num_pass=num_pass,
+               stabilizer=util.orth,
+               passes_per_stab=1)
     rf_ = RF1(rso_)
     Q = rf_.exec(A, k, 0.0, rng)
     return Q
@@ -126,7 +126,7 @@ class RangeFinder:
 
 class RF1(RangeFinder):
 
-    def __init__(self, rso: RowSketchingOperator):
+    def __init__(self, rso: RowSketcher):
         self.rso = rso
 
     def exec(self, A, k, tol, rng):
@@ -135,12 +135,12 @@ class RF1(RangeFinder):
         an approximation for the span of A's top k left singular vectors.
 
         This function works by
-            (1) Using a RowSketchingOperator object to generate a matrix S of
+            (1) Using a RowSketcher object to generate a matrix S of
                 shape (A.shape[1], k),
             (2) Computing Y = A @ S
             (3) Returning the factor Q from a QR factorization of Y.
 
-        The most common implementation of RowSketchingOpertaor is "PRSO1",
+        The most common implementation of RowSketchingOpertaor is "RS1",
         which uses a randomized power method to amplify the sampling power
         of an oblivious sketching matrix.
 

@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg as la
-from ristretto.ballistic.randlapack.comps.powering import PRSO1,  \
-    RowSketchingOperator
+from ristretto.ballistic.randlapack.comps.powering import RS1,  \
+    RowSketcher
 
 """
 Look at SciPy's 
@@ -38,7 +38,7 @@ class BaseFRID:
 class FRID1(BaseFRID):
     """Sketch + CPQR approach to ID"""
 
-    def __init__(self, sk_op: RowSketchingOperator):
+    def __init__(self, sk_op: RowSketcher):
         self.sk_op = sk_op
 
     def exec(self, A, k, over, axis, rng):
@@ -60,7 +60,7 @@ class FRID1(BaseFRID):
 class FRID2(BaseFRID):
     """Sketch + (CPQR skeleton) + (least squares) approach to ID"""
 
-    def __init__(self, sk_op: RowSketchingOperator, lstsq=la.lstsq):
+    def __init__(self, sk_op: RowSketcher, lstsq=la.lstsq):
         self.sk_op = sk_op
         self.lstsq = lstsq
 
@@ -107,7 +107,7 @@ class BaseFRDID:
 class FRDID1(BaseFRDID):
     """Sketch + CPQR approach to double ID"""
 
-    def __init__(self, sk_op: RowSketchingOperator):
+    def __init__(self, sk_op: RowSketcher):
         self.sk_op = sk_op
 
     def exec(self, A, k, over, rng):
