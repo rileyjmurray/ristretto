@@ -241,6 +241,8 @@ def qb_b_pe(num_passes, blk, A, k, tol, rng):
 
 class QBFactorizer:
 
+    TOL_CONTROL = 'none'
+
     def exec(self, A, k, tol, rng):
         """
         Return a matrix Q with orthonormal columns and a matrix B where
@@ -287,6 +289,8 @@ class QB1(QBFactorizer):
     Direct reduction to the rangefinder problem. Given a rangefinder's output
     Q, we set B = Q.T @ A and return (Q, B).
     """
+
+    TOL_CONTROL = 'unknown'  # depends on implementation of rangefinder
 
     def __init__(self, rf: RangeFinder):
         """
@@ -348,6 +352,17 @@ class QB1(QBFactorizer):
 
 
 class QB2(QBFactorizer):
+    """
+    Common uses
+
+        QB2.exec(A, min(A.shape), tol, rng) will return
+        an approximation (Q, B) where ||A - Q B || <= tol.
+
+        QB2.exec(A, k, 0, rng) will return (Q, B)
+        where Q has k columns.
+    """
+
+    TOL_CONTROL = 'full'
 
     def __init__(self, rf: RangeFinder, blk: int, overwrite_a: bool):
         self.rangefinder = rf
@@ -457,6 +472,8 @@ class QB2(QBFactorizer):
 
 
 class QB3(QBFactorizer):
+
+    TOL_CONTROL = 'early stopping'
 
     def __init__(self, sk_op: RowSketchingOperator, blk: int):
         self.sk_op = sk_op

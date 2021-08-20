@@ -16,14 +16,14 @@ def naive_bad_mat(n_rows, n_cols, scale, rng):
     return A_bad
 
 
-def naive_run_lstsq(seed, sap):
+def naive_run_lstsq(seed, sap, tol, iter_lim):
     rng = np.random.default_rng(seed)
     n_rows, n_cols = 2000, 200
     A = naive_bad_mat(n_rows, n_cols, scale=5, rng=rng)
     x0 = np.random.randn(n_cols)
     b0 = A @ x0
     b = b0 + 0.05 * rng.standard_normal(n_rows)
-    x_sap = sap.exec(A, b, tol=1e-8, iter_lim=40, rng=rng)
+    x_sap = sap.exec(A, b, tol=tol, iter_lim=iter_lim, rng=rng)
     x_np = np.linalg.lstsq(A, b, rcond=None)[0]
     error = np.linalg.norm(x_sap - x_np)
     return error
@@ -37,31 +37,31 @@ class TestSAPs(unittest.TestCase):
     Sketch-and-Precondition using QR
     """
 
+    def _run_batch_lstsq(self, sap, tol, iter_lim, tolfac1, tolfac2):
+        errors = np.zeros(len(TestSAPs.SEEDS))
+        for i, seed in enumerate(TestSAPs.SEEDS):
+            error = naive_run_lstsq(seed, sap, tol, iter_lim)
+            errors[i] = error
+            self.assertLessEqual(error, tol * tolfac1)
+        mean_error = np.mean(errors)
+        self.assertLessEqual(mean_error, tol * tolfac2)
+
     def test_sap1_srct(self):
         sap = rist_lsq.SAP1(rist_lin.srct_operator,
                             sampling_factor=3)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
         pass
 
     def test_sap1_gaussian(self):
         sap = rist_lsq.SAP1(rist_lin.normalized_gaussian_operator,
                             sampling_factor=2)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
         pass
 
     def test_sap1_sjlt(self):
         sap = rist_lsq.SAP1(rist_lin.sjlt_operator,
                             sampling_factor=3)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
         pass
 
     """
@@ -72,36 +72,23 @@ class TestSAPs(unittest.TestCase):
         sap = rist_lsq.SAP2(rist_lin.srct_operator,
                             sampling_factor=3,
                             smart_init=True)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
         pass
 
     def test_sap2_gaussian(self):
+        # Tests run against more generous error tolerance.
         sap = rist_lsq.SAP2(rist_lin.normalized_gaussian_operator,
-                            sampling_factor=2,
+                            sampling_factor=3,
                             smart_init=True)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
         sap.smart_init = False
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
-        pass
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
 
     def test_sap2_sjlt(self):
         sap = rist_lsq.SAP2(rist_lin.sjlt_operator,
                             sampling_factor=3,
                             smart_init=True)
-        errors = np.zeros(len(TestSAPs.SEEDS))
-        for i, seed in enumerate(TestSAPs.SEEDS):
-            error = naive_run_lstsq(seed, sap)
-            errors[i] = error
-        pass
+        self._run_batch_lstsq(sap, 1e-8, 40, 100.0, 10.0)
 
 
 class TestSAS(unittest.TestCase):

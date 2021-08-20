@@ -232,14 +232,12 @@ class SAP2(OverLstsqSolver):
             b_remainder = b - A @ x_ske
             if la.norm(b_remainder, ord=2) < la.norm(b, ord=2):
                 # x_ske is a better starting point than the zero vector.
-                y_star = de.pinv_precond_lsqr(A, b_remainder,
+                x_star = de.pinv_precond_lsqr(A, b_remainder,
                                               N, tol, iter_lim)[0]
-                x_star = N @ y_star + x_ske
+                x_star = x_star + x_ske
             else:
                 # The zero vector is at least as good as x_ske.
-                y_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
-                x_star = N @ y_star
+                x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
         else:
-            y_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
-            x_star = N @ y_star
+            x_star = de.pinv_precond_lsqr(A, b, N, tol, iter_lim)[0]
         return x_star
